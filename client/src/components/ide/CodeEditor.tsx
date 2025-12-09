@@ -206,134 +206,241 @@ const getFileIconColor = (language: string): string => {
   return colors[language] || 'text-muted-foreground';
 };
 
-const syntaxHighlight = (code: string, language: string): string => {
-  let highlighted = code
+interface Token {
+  type: 'keyword' | 'string' | 'comment' | 'number' | 'function' | 'class' | 'decorator' | 'builtin' | 'variable' | 'operator' | 'text';
+  value: string;
+}
+
+const tokenize = (code: string, language: string): Token[] => {
+  const tokens: Token[] = [];
+  let remaining = code;
+  
+  const patterns: { type: Token['type']; regex: RegExp }[] = [];
+  
+  if (['javascript', 'typescript'].includes(language)) {
+    patterns.push(
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^"(?:[^"\\]|\\.)*"/ },
+      { type: 'string', regex: /^'(?:[^'\\]|\\.)*'/ },
+      { type: 'string', regex: /^`(?:[^`\\]|\\.)*`/ },
+      { type: 'keyword', regex: /^(?:const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|implements|interface|type|enum|namespace|module|import|export|from|default|async|await|try|catch|finally|throw|new|this|super|typeof|instanceof|void|null|undefined|true|false|static|public|private|protected|readonly|abstract|get|set|of|in|yield|delete)\b/ },
+      { type: 'decorator', regex: /^@\w+/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*(?:e[+-]?\d+)?)\b/ },
+    );
+  } else if (language === 'python') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'string', regex: /^"""[\s\S]*?"""/ },
+      { type: 'string', regex: /^'''[\s\S]*?'''/ },
+      { type: 'string', regex: /^f?"(?:[^"\\]|\\.)*"/ },
+      { type: 'string', regex: /^f?'(?:[^'\\]|\\.)*'/ },
+      { type: 'keyword', regex: /^(?:def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|raise|with|lambda|pass|break|continue|yield|global|nonlocal|assert|del|None|True|False|and|or|not|in|is|async|await|match|case)\b/ },
+      { type: 'builtin', regex: /^(?:print|len|range|str|int|float|list|dict|set|tuple|bool|type|input|open|abs|max|min|sum|sorted|reversed|enumerate|zip|map|filter|any|all|isinstance|hasattr|getattr|setattr|super|object|staticmethod|classmethod|property)\b/ },
+      { type: 'decorator', regex: /^@\w+/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*(?:e[+-]?\d+)?j?)\b/ },
+    );
+  } else if (language === 'html' || language === 'xml') {
+    patterns.push(
+      { type: 'comment', regex: /^<!--[\s\S]*?-->/ },
+      { type: 'keyword', regex: /^<\/?[\w:-]+/ },
+      { type: 'decorator', regex: /^\s[\w:-]+(?==)/ },
+      { type: 'string', regex: /^="[^"]*"/ },
+      { type: 'string', regex: /^='[^']*'/ },
+    );
+  } else if (['css', 'scss', 'less'].includes(language)) {
+    patterns.push(
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'class', regex: /^[.#][\w-]+/ },
+      { type: 'keyword', regex: /^@[\w-]+/ },
+      { type: 'function', regex: /^[\w-]+(?=\s*:)/ },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'number', regex: /^-?\d+\.?\d*(?:px|em|rem|%|vh|vw|deg|s|ms)?/ },
+    );
+  } else if (language === 'json') {
+    patterns.push(
+      { type: 'function', regex: /^"(?:[^"\\]|\\.)*"\s*(?=:)/ },
+      { type: 'string', regex: /^"(?:[^"\\]|\\.)*"/ },
+      { type: 'keyword', regex: /^(?:true|false|null)\b/ },
+      { type: 'number', regex: /^-?\d+\.?\d*(?:e[+-]?\d+)?/ },
+    );
+  } else if (language === 'yaml') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'function', regex: /^[\w-]+(?=\s*:)/ },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'keyword', regex: /^(?:true|false|null|~)\b/ },
+      { type: 'number', regex: /^-?\d+\.?\d*/ },
+    );
+  } else if (language === 'bash') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'keyword', regex: /^(?:if|then|else|elif|fi|for|while|do|done|case|esac|function|return|local|export|source|alias|unalias|exit|break|continue|in)\b/ },
+      { type: 'variable', regex: /^\$[\w{}]+|\$\([^)]*\)/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+    );
+  } else if (language === 'go') {
+    patterns.push(
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^`[^`]*`/ },
+      { type: 'keyword', regex: /^(?:package|import|func|return|var|const|type|struct|interface|map|chan|go|defer|if|else|for|range|switch|case|default|break|continue|fallthrough|select|nil|true|false|iota)\b/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^\d+\.?\d*/ },
+    );
+  } else if (language === 'rust') {
+    patterns.push(
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'keyword', regex: /^(?:fn|let|mut|const|static|struct|enum|impl|trait|type|pub|mod|use|crate|self|super|as|where|for|loop|while|if|else|match|return|break|continue|move|ref|async|await|dyn|unsafe|extern|true|false|Some|None|Ok|Err)\b/ },
+      { type: 'decorator', regex: /^#\[[\s\S]*?\]/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^\d+\.?\d*(?:f32|f64|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?/ },
+    );
+  } else if (language === 'sql') {
+    patterns.push(
+      { type: 'comment', regex: /^--.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'keyword', regex: /^(?:SELECT|FROM|WHERE|AND|OR|NOT|IN|LIKE|BETWEEN|IS|NULL|AS|ON|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|GROUP|BY|HAVING|ORDER|ASC|DESC|LIMIT|OFFSET|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|INDEX|VIEW|DROP|ALTER|ADD|COLUMN|PRIMARY|KEY|FOREIGN|REFERENCES|UNIQUE|CHECK|DEFAULT|CASCADE|TRUNCATE|UNION|ALL|DISTINCT|EXISTS|CASE|WHEN|THEN|ELSE|END|COUNT|SUM|AVG|MIN|MAX)\b/i },
+      { type: 'number', regex: /^\d+\.?\d*/ },
+    );
+  } else if (language === 'ruby') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'keyword', regex: /^(?:def|end|class|module|if|elsif|else|unless|case|when|while|until|for|do|begin|rescue|ensure|raise|return|yield|next|break|redo|retry|self|super|nil|true|false|and|or|not|in|require|require_relative|include|extend|attr_reader|attr_writer|attr_accessor|private|protected|public|alias|lambda|proc)\b/ },
+      { type: 'builtin', regex: /^:\w+/ },
+      { type: 'variable', regex: /^@\w+/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^\d+\.?\d*/ },
+    );
+  } else if (['java', 'kotlin'].includes(language)) {
+    patterns.push(
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'keyword', regex: /^(?:class|interface|enum|extends|implements|public|private|protected|static|final|abstract|synchronized|volatile|transient|native|strictfp|void|boolean|byte|char|short|int|long|float|double|if|else|for|while|do|switch|case|default|break|continue|return|throw|throws|try|catch|finally|new|this|super|instanceof|null|true|false|package|import|var|val|fun|when|object|companion|data|sealed|open|override|lateinit|by|lazy|suspend|inline|crossinline|noinline|reified|internal|out|in)\b/ },
+      { type: 'decorator', regex: /^@\w+/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^\d+\.?\d*[fFdDlL]?/ },
+    );
+  } else if (language === 'php') {
+    patterns.push(
+      { type: 'comment', regex: /^\/\/.*/ },
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'comment', regex: /^\/\*[\s\S]*?\*\// },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+      { type: 'keyword', regex: /^(?:function|class|interface|trait|extends|implements|public|private|protected|static|final|abstract|const|var|if|else|elseif|for|foreach|while|do|switch|case|default|break|continue|return|throw|try|catch|finally|new|clone|instanceof|echo|print|die|exit|include|include_once|require|require_once|namespace|use|as|null|true|false|self|parent|this|array|callable|iterable|void|bool|int|float|string|object|mixed)\b/ },
+      { type: 'variable', regex: /^\$\w+/ },
+      { type: 'class', regex: /^[A-Z][a-zA-Z0-9_]*\b/ },
+      { type: 'function', regex: /^\w+(?=\s*\()/ },
+      { type: 'number', regex: /^\d+\.?\d*/ },
+    );
+  } else if (language === 'dockerfile') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'keyword', regex: /^(?:FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL|MAINTAINER)\b/ },
+      { type: 'string', regex: /^"[^"]*"/ },
+      { type: 'string', regex: /^'[^']*'/ },
+    );
+  } else if (language === 'markdown') {
+    patterns.push(
+      { type: 'keyword', regex: /^#{1,6}\s.*/ },
+      { type: 'string', regex: /^```[\s\S]*?```/ },
+      { type: 'string', regex: /^`[^`]+`/ },
+      { type: 'function', regex: /^\[[^\]]+\]\([^)]+\)/ },
+      { type: 'decorator', regex: /^\*\*[^*]+\*\*|__[^_]+__/ },
+      { type: 'comment', regex: /^\*[^*]+\*|_[^_]+_/ },
+    );
+  } else if (language === 'env') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+      { type: 'function', regex: /^\w+(?==)/ },
+      { type: 'string', regex: /^=.*/ },
+    );
+  } else if (language === 'gitignore') {
+    patterns.push(
+      { type: 'comment', regex: /^#.*/ },
+    );
+  }
+  
+  while (remaining.length > 0) {
+    let matched = false;
+    
+    for (const pattern of patterns) {
+      const match = remaining.match(pattern.regex);
+      if (match && match.index === 0) {
+        tokens.push({ type: pattern.type, value: match[0] });
+        remaining = remaining.slice(match[0].length);
+        matched = true;
+        break;
+      }
+    }
+    
+    if (!matched) {
+      const nextChar = remaining[0];
+      if (tokens.length > 0 && tokens[tokens.length - 1].type === 'text') {
+        tokens[tokens.length - 1].value += nextChar;
+      } else {
+        tokens.push({ type: 'text', value: nextChar });
+      }
+      remaining = remaining.slice(1);
+    }
+  }
+  
+  return tokens;
+};
+
+const escapeHtml = (text: string): string => {
+  return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+};
 
-  if (['javascript', 'typescript'].includes(language)) {
-    const keywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|class|extends|implements|interface|type|enum|namespace|module|import|export|from|default|async|await|try|catch|finally|throw|new|this|super|typeof|instanceof|void|null|undefined|true|false|static|public|private|protected|readonly|abstract|get|set|of|in|yield|delete)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    
-    highlighted = highlighted.replace(/("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|`[^`\\]*(?:\\.[^`\\]*)*`)/g, '<span class="text-green-400">$1</span>');
-    
-    highlighted = highlighted.replace(/\b(\d+\.?\d*(?:e[+-]?\d+)?)\b/gi, '<span class="text-orange-400">$1</span>');
-    
-    highlighted = highlighted.replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span class="text-yellow-300">$1</span>');
-    
-    highlighted = highlighted.replace(/\b(\w+)(?=\s*\()/g, '<span class="text-blue-300">$1</span>');
-    
-    highlighted = highlighted.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
-  } else if (language === 'html' || language === 'xml') {
-    highlighted = highlighted.replace(/(&lt;!--[\s\S]*?--&gt;)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(&lt;\/?)([\w:-]+)/g, '$1<span class="text-red-400">$2</span>');
-    highlighted = highlighted.replace(/\s([\w:-]+)(?==)/g, ' <span class="text-yellow-300">$1</span>');
-    highlighted = highlighted.replace(/=("[^"]*"|'[^']*')/g, '=<span class="text-green-400">$1</span>');
-  } else if (language === 'css' || language === 'scss' || language === 'less') {
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\.[\w-]+|#[\w-]+)/g, '<span class="text-yellow-300">$1</span>');
-    highlighted = highlighted.replace(/([\w-]+)(?=\s*:)/g, '<span class="text-blue-300">$1</span>');
-    highlighted = highlighted.replace(/:\s*([^;{}]+)/g, ': <span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/(@[\w-]+)/g, '<span class="text-purple-400">$1</span>');
-  } else if (language === 'python') {
-    const keywords = /\b(def|class|if|elif|else|for|while|return|import|from|as|try|except|finally|raise|with|lambda|pass|break|continue|yield|global|nonlocal|assert|del|None|True|False|and|or|not|in|is|async|await|match|case)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\')/g, '<span class="text-green-400 italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*')/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\d+\.?\d*(?:e[+-]?\d+)?j?)\b/gi, '<span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\w+)(?=\s*\()/g, '<span class="text-blue-300">$1</span>');
-    highlighted = highlighted.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
-    const builtins = /\b(print|len|range|str|int|float|list|dict|set|tuple|bool|type|input|open|file|abs|max|min|sum|sorted|reversed|enumerate|zip|map|filter|any|all|isinstance|hasattr|getattr|setattr|super|object|staticmethod|classmethod|property)\b/g;
-    highlighted = highlighted.replace(builtins, '<span class="text-cyan-400">$1</span>');
-  } else if (language === 'json') {
-    highlighted = highlighted.replace(/("(?:[^"\\]|\\.)*")\s*:/g, '<span class="text-blue-300">$1</span>:');
-    highlighted = highlighted.replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/:\s*(-?\d+\.?\d*(?:e[+-]?\d+)?)/gi, ': <span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/:\s*(true|false|null)\b/g, ': <span class="text-purple-400">$1</span>');
-  } else if (language === 'yaml') {
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/^(\s*[\w-]+):/gm, '<span class="text-blue-300">$1</span>:');
-    highlighted = highlighted.replace(/:\s*("[^"]*"|'[^']*')/g, ': <span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/:\s*(true|false|null|~)\b/gi, ': <span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/:\s*(-?\d+\.?\d*)\b/g, ': <span class="text-orange-400">$1</span>');
-  } else if (language === 'bash') {
-    const keywords = /\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|local|export|source|alias|unalias|exit|break|continue|in)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*"|'[^']*')/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/(\$[\w{}]+|\$\([^)]*\))/g, '<span class="text-cyan-400">$1</span>');
-  } else if (language === 'go') {
-    const keywords = /\b(package|import|func|return|var|const|type|struct|interface|map|chan|go|defer|if|else|for|range|switch|case|default|break|continue|fallthrough|select|nil|true|false|iota)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*"|`[^`]*`)/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, '<span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\w+)(?=\s*\()/g, '<span class="text-blue-300">$1</span>');
-  } else if (language === 'rust') {
-    const keywords = /\b(fn|let|mut|const|static|struct|enum|impl|trait|type|pub|mod|use|crate|self|super|as|where|for|loop|while|if|else|match|return|break|continue|move|ref|async|await|dyn|unsafe|extern|true|false|Some|None|Ok|Err)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*")/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\d+\.?\d*(?:f32|f64|i8|i16|i32|i64|i128|u8|u16|u32|u64|u128|isize|usize)?)\b/g, '<span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/(#\[[\s\S]*?\])/g, '<span class="text-yellow-400">$1</span>');
-  } else if (language === 'sql') {
-    const keywords = /\b(SELECT|FROM|WHERE|AND|OR|NOT|IN|LIKE|BETWEEN|IS|NULL|AS|ON|JOIN|LEFT|RIGHT|INNER|OUTER|FULL|CROSS|GROUP|BY|HAVING|ORDER|ASC|DESC|LIMIT|OFFSET|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|INDEX|VIEW|DROP|ALTER|ADD|COLUMN|PRIMARY|KEY|FOREIGN|REFERENCES|UNIQUE|CHECK|DEFAULT|CASCADE|TRUNCATE|UNION|ALL|DISTINCT|EXISTS|CASE|WHEN|THEN|ELSE|END|COUNT|SUM|AVG|MIN|MAX)\b/gi;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(--.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/('[^']*')/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\d+\.?\d*)\b/g, '<span class="text-orange-400">$1</span>');
-  } else if (language === 'ruby') {
-    const keywords = /\b(def|end|class|module|if|elsif|else|unless|case|when|while|until|for|do|begin|rescue|ensure|raise|return|yield|next|break|redo|retry|self|super|nil|true|false|and|or|not|in|require|require_relative|include|extend|attr_reader|attr_writer|attr_accessor|private|protected|public|alias|lambda|proc)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*"|'[^']*')/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/(:\w+)/g, '<span class="text-cyan-400">$1</span>');
-    highlighted = highlighted.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
-  } else if (language === 'java' || language === 'kotlin') {
-    const keywords = /\b(class|interface|enum|extends|implements|public|private|protected|static|final|abstract|synchronized|volatile|transient|native|strictfp|void|boolean|byte|char|short|int|long|float|double|if|else|for|while|do|switch|case|default|break|continue|return|throw|throws|try|catch|finally|new|this|super|instanceof|null|true|false|package|import|var|val|fun|when|object|companion|data|sealed|open|override|lateinit|by|lazy|suspend|inline|crossinline|noinline|reified|internal|out|in)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*")/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/\b(\d+\.?\d*[fFdDlL]?)\b/g, '<span class="text-orange-400">$1</span>');
-    highlighted = highlighted.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
-  } else if (language === 'php') {
-    const keywords = /\b(function|class|interface|trait|extends|implements|public|private|protected|static|final|abstract|const|var|if|else|elseif|for|foreach|while|do|switch|case|default|break|continue|return|throw|try|catch|finally|new|clone|instanceof|echo|print|die|exit|include|include_once|require|require_once|namespace|use|as|null|true|false|self|parent|this|array|callable|iterable|void|bool|int|float|string|object|mixed)\b/g;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(\/\/.*$|#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/(\/\*[\s\S]*?\*\/)/g, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*"|'[^']*')/g, '<span class="text-green-400">$1</span>');
-    highlighted = highlighted.replace(/(\$\w+)/g, '<span class="text-cyan-400">$1</span>');
-  } else if (language === 'markdown') {
-    highlighted = highlighted.replace(/^(#{1,6}\s.*)$/gm, '<span class="text-blue-400 font-bold">$1</span>');
-    highlighted = highlighted.replace(/(\*\*[^*]+\*\*|__[^_]+__)/g, '<span class="font-bold">$1</span>');
-    highlighted = highlighted.replace(/(\*[^*]+\*|_[^_]+_)/g, '<span class="italic">$1</span>');
-    highlighted = highlighted.replace(/(`[^`]+`)/g, '<span class="text-green-400 bg-muted/50 px-1 rounded">$1</span>');
-    highlighted = highlighted.replace(/(\[[^\]]+\]\([^)]+\))/g, '<span class="text-cyan-400">$1</span>');
-    highlighted = highlighted.replace(/^(\s*[-*+]\s)/gm, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/^(\s*\d+\.\s)/gm, '<span class="text-purple-400">$1</span>');
-  } else if (language === 'dockerfile') {
-    const keywords = /^(FROM|RUN|CMD|LABEL|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL|MAINTAINER)\b/gm;
-    highlighted = highlighted.replace(keywords, '<span class="text-purple-400">$1</span>');
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    highlighted = highlighted.replace(/("[^"]*"|'[^']*')/g, '<span class="text-green-400">$1</span>');
-  } else if (language === 'env' || language === 'gitignore') {
-    highlighted = highlighted.replace(/(#.*$)/gm, '<span class="text-muted-foreground italic">$1</span>');
-    if (language === 'env') {
-      highlighted = highlighted.replace(/^(\w+)=/gm, '<span class="text-blue-300">$1</span>=');
-      highlighted = highlighted.replace(/=(.*)$/gm, '=<span class="text-green-400">$1</span>');
+const syntaxHighlight = (code: string, language: string): string => {
+  const tokens = tokenize(code, language);
+  
+  const colorMap: Record<Token['type'], string> = {
+    keyword: 'text-purple-400',
+    string: 'text-green-400',
+    comment: 'text-gray-500 italic',
+    number: 'text-orange-400',
+    function: 'text-blue-300',
+    class: 'text-yellow-300',
+    decorator: 'text-yellow-400',
+    builtin: 'text-cyan-400',
+    variable: 'text-cyan-400',
+    operator: 'text-foreground',
+    text: '',
+  };
+  
+  return tokens.map(token => {
+    const escaped = escapeHtml(token.value);
+    const colorClass = colorMap[token.type];
+    if (colorClass) {
+      return `<span class="${colorClass}">${escaped}</span>`;
     }
-  }
-
-  return highlighted;
+    return escaped;
+  }).join('');
 };
 
 const FileIcon = ({ language, className = "w-4 h-4" }: { language: string; className?: string }) => {
