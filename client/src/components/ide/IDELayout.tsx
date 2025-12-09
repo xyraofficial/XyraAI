@@ -327,9 +327,9 @@ export default function IDELayout() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
-      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+      <header className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border bg-card shrink-0 safe-area-top">
         <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+          <div className="w-9 h-9 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-primary-foreground font-bold text-sm">DS</span>
           </div>
           <span className="font-semibold text-base">DevSpace</span>
@@ -393,19 +393,20 @@ export default function IDELayout() {
         {renderContent()}
       </div>
 
-      <nav className="flex items-center justify-around border-t border-border bg-card py-2 shrink-0 safe-area-inset-bottom">
+      <nav className="flex items-center justify-around border-t border-border bg-card py-3 shrink-0 safe-area-bottom">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
-            className={`flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors min-w-[60px] ${
+            data-testid={`nav-${tab.id}`}
+            className={`flex flex-col items-center gap-1.5 px-4 py-2 rounded-xl transition-colors min-w-[64px] active:scale-95 ${
               activeTab === tab.id
                 ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-foreground"
+                : "text-muted-foreground active:text-foreground"
             }`}
           >
             {tab.icon}
-            <span className="text-xs font-medium">{tab.label}</span>
+            <span className="text-[11px] font-medium">{tab.label}</span>
           </button>
         ))}
       </nav>
