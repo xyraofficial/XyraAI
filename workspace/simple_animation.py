@@ -1,23 +1,27 @@
-import turtle
 import time
+import os
 
-# Set up the screen
-screen = turtle.Screen()
-screen.title('Simple Animation')
-screen.bgcolor('black')
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-# Create and customize the turtle
-t = turtle.Turtle()
-t.speed(0)
-t.color('cyan')
+def animate():
+    frames = [
+        '(^_^)',
+        '(^_~)',
+        '(^_^)',
+        '(~_^)'
+    ]
+    
+    try:
+        while True:
+            for frame in frames:
+                clear_screen()
+                print('\n' * 3)
+                print(f'{" " * 10}{frame}')
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        print('\nAnimasi selesai!')
 
-# Draw a spinning star
-for _ in range(36):
-    for _ in range(5):
-        t.forward(100)
-        t.right(144)
-    t.right(10)
-
-# Hide the turtle and keep window open
-t.hideturtle()
-screen.mainloop()
+if __name__ == '__main__':
+    print('Tekan Ctrl+C untuk menghentikan animasi')
+    animate()
