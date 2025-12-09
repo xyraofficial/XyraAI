@@ -13,6 +13,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { sendChatMessage, getApiStatus, getFileTree, readFile, type ToolCall, type ToolResult, type FileNode } from "@/lib/api";
+import { agentConsole } from "@/lib/agentConsole";
 
 interface Message {
   id: string;
@@ -141,6 +142,29 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
       setMessages((prev) => [...prev, assistantMessage]);
 
       if (response.toolResults && response.toolResults.length > 0) {
+        response.toolResults.forEach((result) => {
+          if (result.tool === "run_command") {
+            const args = response.toolCalls?.find(t => t.tool === "run_command")?.args;
+            agentConsole.emit("command", `$ ${args?.command || "unknown command"}`);
+            
+            const stdout = result.result?.stdout || "";
+            const stderr = result.result?.stderr || result.error || "";
+            
+            if (stdout) {
+              agentConsole.emit("output", stdout);
+            }
+            if (stderr) {
+              agentConsole.emit("error", stderr);
+            }
+            if (result.success && !stdout && !stderr) {
+              agentConsole.emit("info", "Command completed successfully (no output)");
+            }
+          } else {
+            const label = TOOL_LABELS[result.tool] || result.tool;
+            agentConsole.emit("info", `${label}: ${result.success ? "Success" : "Failed"}`);
+          }
+        });
+
         const hasFileChanges = response.toolResults.some(
           (r) => r.success && ["create_file", "edit_file", "delete_file"].includes(r.tool)
         );

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Terminal as TerminalIcon, X, Plus, Trash2 } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Trash2, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { executeCommand } from "@/lib/api";
+import { agentConsole, type AgentLog } from "@/lib/agentConsole";
 
 interface TerminalLine {
   id: string;
@@ -15,6 +16,7 @@ interface TerminalSession {
   name: string;
   lines: TerminalLine[];
   currentDirectory: string;
+  isAgentConsole?: boolean;
 }
 
 interface TerminalProps {
@@ -25,6 +27,20 @@ export default function Terminal({
   initialDirectory = ""
 }: TerminalProps) {
   const [sessions, setSessions] = useState<TerminalSession[]>([
+    {
+      id: "agent-console",
+      name: "Agent Console",
+      lines: [
+        {
+          id: "welcome-agent",
+          type: "system",
+          content: "Agent Console - Output from AI Agent commands will appear here.",
+          timestamp: new Date(),
+        },
+      ],
+      currentDirectory: initialDirectory,
+      isAgentConsole: true,
+    },
     {
       id: "1",
       name: "bash",
@@ -39,7 +55,31 @@ export default function Terminal({
       currentDirectory: initialDirectory,
     },
   ]);
-  const [activeSessionId, setActiveSessionId] = useState("1");
+  const [activeSessionId, setActiveSessionId] = useState("agent-console");
+
+  useEffect(() => {
+    const unsubscribe = agentConsole.subscribe((log: AgentLog) => {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === "agent-console"
+            ? {
+                ...session,
+                lines: [
+                  ...session.lines,
+                  {
+                    id: log.id,
+                    type: log.type === "command" ? "input" : log.type === "error" ? "error" : "output",
+                    content: log.content,
+                    timestamp: log.timestamp,
+                  },
+                ],
+              }
+            : session
+        )
+      );
+    });
+    return unsubscribe;
+  }, []);
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
