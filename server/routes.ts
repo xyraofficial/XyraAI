@@ -461,11 +461,20 @@ When performing actions, you MUST use this exact XML format:
 1. ALWAYS use tools when user asks to create, edit, fix, or run something
 2. Explain briefly what you will do, then use the tool
 3. For fixing code: if file content is provided, analyze and use edit_file with the fix
-4. JSON in tools must be valid - escape quotes in strings
+4. JSON in tools must be valid - escape quotes in strings properly (use double backslash for escape characters like \\n, \\t, \\\\)
 5. One tool call per action
 6. Be concise - don't repeat file contents in your explanation
+7. IMPORTANT: After running a command, ALWAYS provide feedback about what happened based on the output
 
-## Example Response
+## Example Response for run_command
+User: "Run my python script"
+Response: I'll run your Python script for you.
+
+<tool name="run_command">{"command": "python script.py"}</tool>
+
+The command will execute and I'll show you the output in the console. If there are any errors, I'll help you fix them.
+
+## Example Response for create_file
 User: "Create a hello world file"
 Response: I'll create a hello.js file for you.
 
@@ -518,8 +527,38 @@ Response: I'll create a hello.js file for you.
         toolResults.push(result);
       }
 
+      // Generate follow-up response if there are tool results
+      let finalResponse = text;
+      if (toolResults.length > 0) {
+        const toolSummary = toolResults.map(r => {
+          if (r.tool === "run_command") {
+            const stdout = r.result?.stdout || "";
+            const stderr = r.result?.stderr || r.error || "";
+            return `Command result: ${r.success ? "Success" : "Failed"}\nOutput: ${stdout}\nErrors: ${stderr}`;
+          }
+          return `${r.tool}: ${r.success ? "Success" : "Failed"} - ${r.result || r.error}`;
+        }).join("\n");
+
+        try {
+          const followUp = await ai.chat.completions.create({
+            model: "llama-3.3-70b-versatile",
+            messages: [
+              { role: "system", content: "You are a helpful coding assistant. Briefly summarize what happened and provide helpful next steps if needed. Be concise (1-2 sentences). If there was an error, explain what went wrong." },
+              { role: "user", content: `Tool execution results:\n${toolSummary}\n\nProvide a brief summary for the user.` }
+            ],
+            max_tokens: 200,
+          });
+          const followUpText = followUp.choices[0]?.message?.content || "";
+          if (followUpText) {
+            finalResponse = text ? `${text}\n\n${followUpText}` : followUpText;
+          }
+        } catch (e) {
+          // If follow-up fails, just use original text
+        }
+      }
+
       res.json({ 
-        response: text,
+        response: finalResponse,
         toolCalls: tools,
         toolResults: toolResults,
         rawResponse: aiContent

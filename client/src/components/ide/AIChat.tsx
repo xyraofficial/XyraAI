@@ -187,27 +187,68 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
 
   const renderToolResults = (toolResults: ToolResult[]) => {
     return (
-      <div className="mt-2 space-y-1.5">
+      <div className="mt-2 space-y-2">
         {toolResults.map((result, index) => {
           const Icon = TOOL_ICONS[result.tool] || Terminal;
           const label = TOOL_LABELS[result.tool] || result.tool;
+          const isCommand = result.tool === "run_command";
+          
+          // Extract stdout/stderr for command results
+          const stdout = result.result?.stdout || "";
+          const stderr = result.result?.stderr || result.error || "";
+          const hasOutput = isCommand && (stdout || stderr);
           
           return (
             <div
               key={index}
-              className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs ${
-                result.success 
-                  ? "bg-green-500/10 text-green-700 dark:text-green-400" 
-                  : "bg-red-500/10 text-red-700 dark:text-red-400"
-              }`}
+              className="rounded-md overflow-hidden border border-border"
               data-testid={`tool-result-${result.tool}-${index}`}
             >
-              <Icon className="w-3.5 h-3.5 flex-shrink-0" />
-              <span className="font-medium">{label}</span>
-              {result.success ? (
-                <CheckCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
-              ) : (
-                <XCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
+              <div
+                className={`flex items-center gap-2 px-2 py-1.5 text-xs ${
+                  result.success 
+                    ? "bg-green-500/10 text-green-700 dark:text-green-400" 
+                    : "bg-red-500/10 text-red-700 dark:text-red-400"
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="font-medium">{label}</span>
+                {result.success ? (
+                  <CheckCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
+                ) : (
+                  <XCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
+                )}
+              </div>
+              
+              {hasOutput && (
+                <div className="bg-zinc-900 dark:bg-zinc-950 p-2 font-mono text-xs">
+                  <div className="flex items-center gap-1 text-zinc-400 mb-1">
+                    <Terminal className="w-3 h-3" />
+                    <span>Console Output</span>
+                  </div>
+                  {stdout && (
+                    <pre className="text-green-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                      {stdout}
+                    </pre>
+                  )}
+                  {stderr && (
+                    <pre className="text-red-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                      {stderr}
+                    </pre>
+                  )}
+                </div>
+              )}
+              
+              {!isCommand && result.error && (
+                <div className="bg-red-500/5 px-2 py-1 text-xs text-red-600 dark:text-red-400">
+                  {result.error}
+                </div>
+              )}
+              
+              {!isCommand && typeof result.result === "string" && result.result && (
+                <div className="bg-muted/30 px-2 py-1 text-xs text-muted-foreground truncate">
+                  {result.result}
+                </div>
               )}
             </div>
           );
