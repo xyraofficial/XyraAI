@@ -17,7 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import FileTree, { type FileNode } from "./FileTree";
-import CodeEditor from "./CodeEditor";
+import CodeEditor, { getLanguageFromExtension } from "./CodeEditor";
 import Terminal from "./Terminal";
 import AIChat from "./AIChat";
 import PackageManager from "./PackageManager";
@@ -45,25 +45,6 @@ interface OpenFile {
   language: string;
   isDirty: boolean;
 }
-
-const getLanguage = (filename: string): string => {
-  const ext = filename.split(".").pop()?.toLowerCase();
-  const langMap: Record<string, string> = {
-    js: "javascript",
-    jsx: "javascript",
-    ts: "typescript",
-    tsx: "typescript",
-    html: "html",
-    css: "css",
-    json: "json",
-    md: "markdown",
-    py: "python",
-    sh: "bash",
-    yml: "yaml",
-    yaml: "yaml",
-  };
-  return langMap[ext || ""] || "plaintext";
-};
 
 export default function IDELayout() {
   const [files, setFiles] = useState<FileNode[]>([]);
@@ -119,7 +100,7 @@ export default function IDELayout() {
           name: file.name,
           path: file.path,
           content,
-          language: getLanguage(file.name),
+          language: getLanguageFromExtension(file.name),
           isDirty: false,
         };
 
