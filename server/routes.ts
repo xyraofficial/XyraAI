@@ -284,6 +284,7 @@ export async function registerRoutes(
         },
         body: JSON.stringify({
           model,
+          max_tokens: 2000,
           messages: [
             {
               role: "system",
