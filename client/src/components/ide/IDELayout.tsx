@@ -443,7 +443,12 @@ export default function IDELayout() {
                     </Button>
                   </div>
                   <div className="flex-1 overflow-hidden">
-                    {rightPanelTab === "ai" ? <AIChat /> : <PackageManager />}
+                    {rightPanelTab === "ai" ? (
+                      <AIChat 
+                        currentFile={activeFileId ? openFiles.find(f => f.id === activeFileId) : undefined}
+                        onFileChange={loadFileTree}
+                      />
+                    ) : <PackageManager />}
                   </div>
                 </div>
               </ResizablePanel>

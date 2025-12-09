@@ -274,11 +274,202 @@ export async function registerRoutes(
     }
   });
 
-  // ============ AI CHAT API ============
+  // ============ AI AGENT API ============
+
+  // Tool definitions for the AI agent
+  interface ToolCall {
+    tool: string;
+    args: Record<string, any>;
+  }
+
+  interface ToolResult {
+    tool: string;
+    success: boolean;
+    result?: any;
+    error?: string;
+  }
+
+  // Execute a tool and return the result
+  async function executeTool(tool: ToolCall): Promise<ToolResult> {
+    try {
+      switch (tool.tool) {
+        case "create_file": {
+          const { path: filePath, content } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, filePath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          const dir = path.dirname(fullPath);
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          fs.writeFileSync(fullPath, content || "", "utf-8");
+          return { tool: tool.tool, success: true, result: `File created: ${filePath}` };
+        }
+        
+        case "edit_file": {
+          const { path: filePath, content } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, filePath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fullPath)) {
+            return { tool: tool.tool, success: false, error: "File not found" };
+          }
+          fs.writeFileSync(fullPath, content, "utf-8");
+          return { tool: tool.tool, success: true, result: `File updated: ${filePath}` };
+        }
+        
+        case "read_file": {
+          const { path: filePath } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, filePath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fullPath)) {
+            return { tool: tool.tool, success: false, error: "File not found" };
+          }
+          const content = fs.readFileSync(fullPath, "utf-8");
+          return { tool: tool.tool, success: true, result: content };
+        }
+        
+        case "delete_file": {
+          const { path: filePath } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, filePath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fullPath)) {
+            return { tool: tool.tool, success: false, error: "File not found" };
+          }
+          fs.unlinkSync(fullPath);
+          return { tool: tool.tool, success: true, result: `File deleted: ${filePath}` };
+        }
+        
+        case "run_command": {
+          const { command } = tool.args;
+          
+          // Validate command - only allow safe development commands
+          const allowedCommands = ['node', 'npm', 'npx', 'python', 'python3', 'pip', 'pip3', 'ls', 'cat', 'echo', 'pwd', 'mkdir', 'touch', 'head', 'tail', 'grep', 'find', 'git'];
+          const firstWord = command.trim().split(/\s+/)[0];
+          
+          // Block dangerous commands
+          const blockedPatterns = ['rm -rf', 'sudo', 'chmod', 'chown', 'curl', 'wget', 'ssh', 'scp', '>', '>>', '|', '&&', ';', '`', '$(' ];
+          for (const pattern of blockedPatterns) {
+            if (command.includes(pattern)) {
+              return { tool: tool.tool, success: false, error: `Command contains blocked pattern: ${pattern}` };
+            }
+          }
+          
+          if (!allowedCommands.includes(firstWord)) {
+            return { tool: tool.tool, success: false, error: `Command '${firstWord}' is not allowed. Allowed: ${allowedCommands.join(', ')}` };
+          }
+          
+          try {
+            const { stdout, stderr } = await execPromise(command, {
+              cwd: WORKSPACE_DIR,
+              timeout: 30000,
+              maxBuffer: 1024 * 1024 * 10,
+              shell: '/bin/bash',
+              env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: WORKSPACE_DIR },
+            });
+            return { tool: tool.tool, success: true, result: { stdout: stdout?.slice(0, 5000), stderr: stderr?.slice(0, 1000) } };
+          } catch (error: any) {
+            return { tool: tool.tool, success: false, error: error.message?.slice(0, 500), result: { stdout: error.stdout?.slice(0, 2000), stderr: error.stderr?.slice(0, 1000) } };
+          }
+        }
+        
+        case "list_files": {
+          const tree = buildFileTree(WORKSPACE_DIR);
+          const flattenTree = (nodes: FileNode[], prefix = ""): string[] => {
+            let result: string[] = [];
+            for (const node of nodes) {
+              result.push(`${prefix}${node.name}${node.type === "folder" ? "/" : ""}`);
+              if (node.children) {
+                result = result.concat(flattenTree(node.children, prefix + "  "));
+              }
+            }
+            return result;
+          };
+          return { tool: tool.tool, success: true, result: flattenTree(tree).join("\n") };
+        }
+        
+        default:
+          return { tool: tool.tool, success: false, error: `Unknown tool: ${tool.tool}` };
+      }
+    } catch (error: any) {
+      return { tool: tool.tool, success: false, error: error.message };
+    }
+  }
+
+  // Parse tool calls from AI response
+  function parseToolCalls(content: string): { text: string; tools: ToolCall[] } {
+    const tools: ToolCall[] = [];
+    let text = content;
+    
+    // Match tool blocks: <tool name="toolname">{"args": "values"}</tool>
+    const toolRegex = /<tool\s+name="([^"]+)">([\s\S]*?)<\/tool>/g;
+    let match;
+    
+    while ((match = toolRegex.exec(content)) !== null) {
+      try {
+        const toolName = match[1];
+        const argsJson = match[2].trim();
+        const args = JSON.parse(argsJson);
+        tools.push({ tool: toolName, args });
+        text = text.replace(match[0], "");
+      } catch (e) {
+        // Invalid JSON, skip this tool call
+      }
+    }
+    
+    return { text: text.trim(), tools };
+  }
+
+  const AGENT_SYSTEM_PROMPT = `You are DevSpace AI, an intelligent coding assistant. You MUST use tools to help users with file operations and commands.
+
+## CRITICAL: Tool Usage Format
+
+When performing actions, you MUST use this exact XML format:
+<tool name="TOOL_NAME">{"key": "value"}</tool>
+
+## Available Tools
+
+1. **create_file** - Create a new file
+   <tool name="create_file">{"path": "app.js", "content": "console.log('Hello');"}</tool>
+
+2. **edit_file** - Edit an existing file (replaces entire content)
+   <tool name="edit_file">{"path": "app.js", "content": "console.log('Updated!');"}</tool>
+
+3. **read_file** - Read file contents
+   <tool name="read_file">{"path": "app.js"}</tool>
+
+4. **delete_file** - Delete a file
+   <tool name="delete_file">{"path": "old.js"}</tool>
+
+5. **run_command** - Run terminal command (allowed: node, npm, npx, python, pip, ls, cat, echo, mkdir, git)
+   <tool name="run_command">{"command": "npm install express"}</tool>
+
+6. **list_files** - List all files
+   <tool name="list_files">{}</tool>
+
+## Rules
+1. ALWAYS use tools when user asks to create, edit, fix, or run something
+2. Explain briefly what you will do, then use the tool
+3. For fixing code: if file content is provided, analyze and use edit_file with the fix
+4. JSON in tools must be valid - escape quotes in strings
+5. One tool call per action
+6. Be concise - don't repeat file contents in your explanation
+
+## Example Response
+User: "Create a hello world file"
+Response: I'll create a hello.js file for you.
+
+<tool name="create_file">{"path": "hello.js", "content": "console.log('Hello, World!');"}</tool>`;
 
   app.post("/api/chat", async (req, res) => {
     try {
-      const { message, model = "anthropic/claude-3.5-sonnet" } = req.body;
+      const { message, model = "anthropic/claude-3.5-sonnet", context } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
@@ -290,6 +481,17 @@ export async function registerRoutes(
           response: "I'm sorry, but the AI service is not configured yet. Please add your OpenRouter API key to use the AI assistant."
         });
       }
+
+      // Build context string
+      let contextInfo = "";
+      if (context?.currentFile) {
+        contextInfo += `\n\nCurrent open file: ${context.currentFile.path}\n\`\`\`\n${context.currentFile.content}\n\`\`\``;
+      }
+      if (context?.fileList) {
+        contextInfo += `\n\nFiles in workspace:\n${context.fileList.join("\n")}`;
+      }
+
+      const userMessage = message + contextInfo;
 
       const response = await fetch(OPENROUTER_API_URL, {
         method: "POST",
@@ -303,14 +505,8 @@ export async function registerRoutes(
           model,
           max_tokens: 2000,
           messages: [
-            {
-              role: "system",
-              content: "You are a helpful AI coding assistant in a web-based IDE called DevSpace. You help developers with writing code, debugging, explaining concepts, and answering programming questions. Be concise and provide code examples when helpful. Use markdown code blocks with language tags for code snippets."
-            },
-            {
-              role: "user",
-              content: message
-            }
+            { role: "system", content: AGENT_SYSTEM_PROMPT },
+            { role: "user", content: userMessage }
           ],
         }),
       });
@@ -325,9 +521,23 @@ export async function registerRoutes(
       }
 
       const data = await response.json();
-      const aiResponse = data.choices?.[0]?.message?.content || "No response generated";
+      const aiContent = data.choices?.[0]?.message?.content || "No response generated";
 
-      res.json({ response: aiResponse });
+      // Parse and execute tool calls
+      const { text, tools } = parseToolCalls(aiContent);
+      const toolResults: ToolResult[] = [];
+
+      for (const tool of tools) {
+        const result = await executeTool(tool);
+        toolResults.push(result);
+      }
+
+      res.json({ 
+        response: text,
+        toolCalls: tools,
+        toolResults: toolResults,
+        rawResponse: aiContent
+      });
     } catch (error: any) {
       console.error("Chat API error:", error);
       res.status(500).json({ 

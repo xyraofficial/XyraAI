@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2 } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2, FileCode, Terminal, FolderOpen, Pencil, Trash, CheckCircle, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,21 +12,49 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-import { sendChatMessage, getApiStatus } from "@/lib/api";
+import { sendChatMessage, getApiStatus, getFileTree, readFile, type ToolCall, type ToolResult, type FileNode } from "@/lib/api";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
 }
 
-export default function AIChat() {
+interface AIChatProps {
+  currentFile?: {
+    path: string;
+    content: string;
+  };
+  onFileChange?: () => void;
+}
+
+const TOOL_ICONS: Record<string, typeof FileCode> = {
+  create_file: FileCode,
+  edit_file: Pencil,
+  read_file: FolderOpen,
+  delete_file: Trash,
+  run_command: Terminal,
+  list_files: FolderOpen,
+};
+
+const TOOL_LABELS: Record<string, string> = {
+  create_file: "Created file",
+  edit_file: "Edited file",
+  read_file: "Read file",
+  delete_file: "Deleted file",
+  run_command: "Ran command",
+  list_files: "Listed files",
+};
+
+export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
       role: "assistant",
-      content: "Hello! I'm your AI coding assistant powered by OpenRouter. I can help you with:\n\n- Writing and debugging code\n- Explaining concepts\n- Code reviews and suggestions\n- Answering programming questions\n\nHow can I help you today?",
+      content: "Hello! I'm DevSpace AI, your intelligent coding assistant. I can help you:\n\n- Create and edit files\n- Fix code errors\n- Run terminal commands\n- Debug and explain code\n\nJust tell me what you need!",
       timestamp: new Date(),
     },
   ]);
@@ -63,6 +91,17 @@ export default function AIChat() {
     scrollToBottom();
   }, [messages, scrollToBottom]);
 
+  const flattenFileTree = (nodes: FileNode[], prefix = ""): string[] => {
+    let result: string[] = [];
+    for (const node of nodes) {
+      result.push(`${prefix}${node.name}${node.type === "folder" ? "/" : ""}`);
+      if (node.children) {
+        result = result.concat(flattenFileTree(node.children, prefix + "  "));
+      }
+    }
+    return result;
+  };
+
   const handleSend = async () => {
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
@@ -79,16 +118,35 @@ export default function AIChat() {
     setIsLoading(true);
 
     try {
-      const response = await sendChatMessage(trimmedInput, selectedModel);
+      const fileTree = await getFileTree();
+      const fileList = flattenFileTree(fileTree.files);
+
+      const context = {
+        currentFile: currentFile,
+        fileList: fileList,
+      };
+
+      const response = await sendChatMessage(trimmedInput, selectedModel, context);
 
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
-        content: response,
+        content: response.response || "",
         timestamp: new Date(),
+        toolCalls: response.toolCalls,
+        toolResults: response.toolResults,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      if (response.toolResults && response.toolResults.length > 0) {
+        const hasFileChanges = response.toolResults.some(
+          (r) => r.success && ["create_file", "edit_file", "delete_file"].includes(r.tool)
+        );
+        if (hasFileChanges && onFileChange) {
+          onFileChange();
+        }
+      }
     } catch (error: any) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
@@ -126,46 +184,82 @@ export default function AIChat() {
     ]);
   };
 
+  const renderToolResults = (toolResults: ToolResult[]) => {
+    return (
+      <div className="mt-2 space-y-1.5">
+        {toolResults.map((result, index) => {
+          const Icon = TOOL_ICONS[result.tool] || Terminal;
+          const label = TOOL_LABELS[result.tool] || result.tool;
+          
+          return (
+            <div
+              key={index}
+              className={`flex items-center gap-2 px-2 py-1.5 rounded-md text-xs ${
+                result.success 
+                  ? "bg-green-500/10 text-green-700 dark:text-green-400" 
+                  : "bg-red-500/10 text-red-700 dark:text-red-400"
+              }`}
+              data-testid={`tool-result-${result.tool}-${index}`}
+            >
+              <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="font-medium">{label}</span>
+              {result.success ? (
+                <CheckCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
+              ) : (
+                <XCircle className="w-3.5 h-3.5 ml-auto flex-shrink-0" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderContent = (message: Message) => {
     const parts = message.content.split(/(```\w*\n[\s\S]*?```)/g);
     
-    return parts.map((part, index) => {
-      const codeMatch = part.match(/```(\w*)\n([\s\S]*?)```/);
-      if (codeMatch) {
-        const language = codeMatch[1] || "plaintext";
-        const code = codeMatch[2].trim();
-        const blockId = `${message.id}-${index}`;
-        
-        return (
-          <div key={index} className="my-2 rounded-md overflow-hidden border border-border">
-            <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border">
-              <span className="text-xs text-muted-foreground">{language}</span>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6"
-                onClick={() => copyToClipboard(code, blockId)}
-                data-testid={`copy-code-${blockId}`}
-              >
-                {copiedId === blockId ? (
-                  <Check className="w-3 h-3 text-success" />
-                ) : (
-                  <Copy className="w-3 h-3" />
-                )}
-              </Button>
-            </div>
-            <pre className="p-3 bg-terminal text-sm overflow-x-auto">
-              <code className="font-mono">{code}</code>
-            </pre>
-          </div>
-        );
-      }
-      return (
-        <span key={index} className="whitespace-pre-wrap">
-          {part}
-        </span>
-      );
-    });
+    return (
+      <>
+        {parts.map((part, index) => {
+          const codeMatch = part.match(/```(\w*)\n([\s\S]*?)```/);
+          if (codeMatch) {
+            const language = codeMatch[1] || "plaintext";
+            const code = codeMatch[2].trim();
+            const blockId = `${message.id}-${index}`;
+            
+            return (
+              <div key={index} className="my-2 rounded-md overflow-hidden border border-border">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-muted/50 border-b border-border">
+                  <span className="text-xs text-muted-foreground">{language}</span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-6 w-6"
+                    onClick={() => copyToClipboard(code, blockId)}
+                    data-testid={`copy-code-${blockId}`}
+                  >
+                    {copiedId === blockId ? (
+                      <Check className="w-3 h-3 text-green-500" />
+                    ) : (
+                      <Copy className="w-3 h-3" />
+                    )}
+                  </Button>
+                </div>
+                <pre className="p-3 bg-muted/30 text-sm overflow-x-auto">
+                  <code className="font-mono">{code}</code>
+                </pre>
+              </div>
+            );
+          }
+          return (
+            <span key={index} className="whitespace-pre-wrap">
+              {part}
+            </span>
+          );
+        })}
+        {message.toolResults && message.toolResults.length > 0 && renderToolResults(message.toolResults)}
+      </>
+    );
   };
 
   return (
@@ -173,7 +267,7 @@ export default function AIChat() {
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-primary" />
-          <span className="text-sm font-medium">AI Assistant</span>
+          <span className="text-sm font-medium">AI Agent</span>
           <Badge variant={apiConnected ? "default" : "destructive"} className="text-xs">
             {apiConnected ? "Connected" : "Not Configured"}
           </Badge>
@@ -258,7 +352,10 @@ export default function AIChat() {
                 <Bot className="w-4 h-4 text-primary" />
               </div>
               <div className="bg-muted rounded-lg px-3 py-2">
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <div className="flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span className="text-sm text-muted-foreground">Thinking...</span>
+                </div>
               </div>
             </div>
           )}
@@ -266,13 +363,19 @@ export default function AIChat() {
       </ScrollArea>
 
       <div className="p-3 border-t border-border">
+        {currentFile && (
+          <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground">
+            <FileCode className="w-3 h-3" />
+            <span>Context: {currentFile.path}</span>
+          </div>
+        )}
         <div className="flex gap-2">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask me anything about code..."
+            placeholder="Ask me to create, edit, or fix files..."
             className="min-h-[40px] max-h-32 resize-none"
             rows={1}
             data-testid="chat-input"

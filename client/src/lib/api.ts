@@ -95,17 +95,45 @@ export async function executeCommand(command: string, cwd?: string): Promise<Ter
 }
 
 // AI Chat API
-export async function sendChatMessage(message: string, model?: string): Promise<string> {
+export interface ToolCall {
+  tool: string;
+  args: Record<string, any>;
+}
+
+export interface ToolResult {
+  tool: string;
+  success: boolean;
+  result?: any;
+  error?: string;
+}
+
+export interface ChatContext {
+  currentFile?: {
+    path: string;
+    content: string;
+  };
+  fileList?: string[];
+}
+
+export interface ChatResponse {
+  response: string;
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+  rawResponse?: string;
+  error?: string;
+}
+
+export async function sendChatMessage(message: string, model?: string, context?: ChatContext): Promise<ChatResponse> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, model }),
+    body: JSON.stringify({ message, model, context }),
   });
   const data = await res.json();
   if (data.error && !data.response) {
     throw new Error(data.error);
   }
-  return data.response;
+  return data;
 }
 
 // Status API
