@@ -538,5 +538,42 @@ Response: I'll create a hello.js file for you.
     });
   });
 
+  // ============ ONLYFANS API ============
+  const ONLYFANS_API_KEY = process.env.ONLYFANS_API_KEY || "";
+
+  // Get OnlyFans profile
+  app.get("/api/profiles/:username", async (req, res) => {
+    try {
+      const { username } = req.params;
+      
+      if (!username) {
+        return res.status(400).json({ error: "Username is required" });
+      }
+
+      if (!ONLYFANS_API_KEY) {
+        return res.status(500).json({ error: "OnlyFans API key not configured" });
+      }
+
+      const response = await fetch(`https://app.onlyfansapi.com/api/profiles/${username}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${ONLYFANS_API_KEY}`,
+        },
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ error: data.error || "Failed to fetch profile" });
+      }
+
+      res.json(data);
+    } catch (error: any) {
+      console.error("OnlyFans API error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   return httpServer;
 }
