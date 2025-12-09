@@ -1,0 +1,2 @@
+[console_scripts]
+xyra-whatsapp = xyra_auth:main
