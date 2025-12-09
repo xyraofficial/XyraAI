@@ -503,7 +503,7 @@ Response: I'll create a hello.js file for you.
         },
         body: JSON.stringify({
           model,
-          max_tokens: 2000,
+          max_tokens: 1500,
           messages: [
             { role: "system", content: AGENT_SYSTEM_PROMPT },
             { role: "user", content: userMessage }
@@ -513,10 +513,30 @@ Response: I'll create a hello.js file for you.
 
       if (!response.ok) {
         const errorData = await response.text();
-        console.error("OpenRouter API error:", errorData);
+        console.error("OpenRouter API error:", response.status, errorData);
+        
+        let errorMessage = "Sorry, there was an error communicating with the AI service.";
+        try {
+          const parsed = JSON.parse(errorData);
+          if (parsed.error?.message) {
+            errorMessage = `AI Error: ${parsed.error.message}`;
+          }
+        } catch (e) {
+          // Keep default message
+        }
+        
+        // Handle specific status codes
+        if (response.status === 401) {
+          errorMessage = "API key is invalid or expired. Please check your OpenRouter API key.";
+        } else if (response.status === 402) {
+          errorMessage = "Insufficient credits on OpenRouter. Please add credits to your account.";
+        } else if (response.status === 429) {
+          errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
+        }
+        
         return res.status(response.status).json({ 
           error: "AI service error",
-          response: "Sorry, there was an error communicating with the AI service. Please try again."
+          response: errorMessage
         });
       }
 
