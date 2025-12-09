@@ -1,22 +1,20 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   PanelLeft,
   PanelRight,
   PanelBottom,
-  Terminal as TerminalIcon,
   Package,
   Sparkles,
-  FolderTree,
   Settings,
   Moon,
   Sun,
+  RefreshCw,
 } from "lucide-react";
 import FileTree, { type FileNode } from "./FileTree";
 import CodeEditor from "./CodeEditor";
@@ -28,123 +26,16 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-// todo: remove mock functionality
-const initialFiles: FileNode[] = [
-  {
-    id: "1",
-    name: "src",
-    type: "folder",
-    children: [
-      {
-        id: "2",
-        name: "components",
-        type: "folder",
-        children: [
-          { id: "3", name: "App.tsx", type: "file", extension: "tsx" },
-          { id: "4", name: "Header.tsx", type: "file", extension: "tsx" },
-          { id: "5", name: "Footer.tsx", type: "file", extension: "tsx" },
-        ],
-      },
-      { id: "6", name: "index.tsx", type: "file", extension: "tsx" },
-      { id: "7", name: "styles.css", type: "file", extension: "css" },
-      { id: "8", name: "utils.ts", type: "file", extension: "ts" },
-    ],
-  },
-  {
-    id: "9",
-    name: "public",
-    type: "folder",
-    children: [
-      { id: "10", name: "index.html", type: "file", extension: "html" },
-      { id: "11", name: "favicon.ico", type: "file" },
-    ],
-  },
-  { id: "12", name: "package.json", type: "file", extension: "json" },
-  { id: "13", name: "tsconfig.json", type: "file", extension: "json" },
-  { id: "14", name: "README.md", type: "file", extension: "md" },
-];
-
-const mockFileContents: Record<string, string> = {
-  "3": `import { useState } from 'react';
-import Header from './Header';
-import Footer from './Footer';
-
-export default function App() {
-  const [count, setCount] = useState(0);
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <Header />
-      <main className="flex-1 p-4">
-        <h1>Welcome to DevSpace</h1>
-        <button onClick={() => setCount(c => c + 1)}>
-          Count: {count}
-        </button>
-      </main>
-      <Footer />
-    </div>
-  );
-}`,
-  "4": `export default function Header() {
-  return (
-    <header className="bg-primary text-white p-4">
-      <nav className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">DevSpace</h1>
-        <ul className="flex gap-4">
-          <li><a href="/">Home</a></li>
-          <li><a href="/about">About</a></li>
-          <li><a href="/contact">Contact</a></li>
-        </ul>
-      </nav>
-    </header>
-  );
-}`,
-  "7": `/* Main styles */
-body {
-  margin: 0;
-  padding: 0;
-  font-family: system-ui, sans-serif;
-}
-
-.container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 1rem;
-}
-
-.btn {
-  padding: 0.5rem 1rem;
-  border-radius: 0.25rem;
-  background: #8B5CF6;
-  color: white;
-  border: none;
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: #7C3AED;
-}`,
-  "12": `{
-  "name": "devspace-project",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
-  },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
-  "devDependencies": {
-    "@types/react": "^18.2.0",
-    "typescript": "^5.3.0",
-    "vite": "^5.0.0"
-  }
-}`,
-};
+import { useToast } from "@/hooks/use-toast";
+import {
+  getFileTree,
+  readFile,
+  writeFile,
+  createFolder,
+  deleteFile,
+  renameFile,
+  type FileNode as ApiFileNode,
+} from "@/lib/api";
 
 interface OpenFile {
   id: string;
@@ -155,8 +46,27 @@ interface OpenFile {
   isDirty: boolean;
 }
 
+const getLanguage = (filename: string): string => {
+  const ext = filename.split(".").pop()?.toLowerCase();
+  const langMap: Record<string, string> = {
+    js: "javascript",
+    jsx: "javascript",
+    ts: "typescript",
+    tsx: "typescript",
+    html: "html",
+    css: "css",
+    json: "json",
+    md: "markdown",
+    py: "python",
+    sh: "bash",
+    yml: "yaml",
+    yaml: "yaml",
+  };
+  return langMap[ext || ""] || "plaintext";
+};
+
 export default function IDELayout() {
-  const [files, setFiles] = useState<FileNode[]>(initialFiles);
+  const [files, setFiles] = useState<FileNode[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
@@ -164,42 +74,36 @@ export default function IDELayout() {
   const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
   const [rightPanelTab, setRightPanelTab] = useState<"ai" | "packages">("ai");
   const [isDarkMode, setIsDarkMode] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast();
+
+  const loadFileTree = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const { files: apiFiles } = await getFileTree();
+      setFiles(apiFiles);
+    } catch (error: any) {
+      toast({
+        title: "Error loading files",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    loadFileTree();
+  }, [loadFileTree]);
 
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
     document.documentElement.classList.toggle("dark", !isDarkMode);
   };
 
-  const getFilePath = (fileId: string, nodes: FileNode[], path: string = ""): string => {
-    for (const node of nodes) {
-      const currentPath = path ? `${path}/${node.name}` : node.name;
-      if (node.id === fileId) return currentPath;
-      if (node.children) {
-        const found = getFilePath(fileId, node.children, currentPath);
-        if (found) return found;
-      }
-    }
-    return "";
-  };
-
-  const getLanguage = (filename: string): string => {
-    const ext = filename.split(".").pop()?.toLowerCase();
-    const langMap: Record<string, string> = {
-      js: "javascript",
-      jsx: "javascript",
-      ts: "typescript",
-      tsx: "typescript",
-      html: "html",
-      css: "css",
-      json: "json",
-      md: "markdown",
-      py: "python",
-    };
-    return langMap[ext || ""] || "plaintext";
-  };
-
   const handleFileSelect = useCallback(
-    (file: FileNode) => {
+    async (file: FileNode) => {
       if (file.type === "folder") return;
 
       const existing = openFiles.find((f) => f.id === file.id);
@@ -208,20 +112,28 @@ export default function IDELayout() {
         return;
       }
 
-      const content = mockFileContents[file.id] || `// ${file.name}\n`;
-      const newFile: OpenFile = {
-        id: file.id,
-        name: file.name,
-        path: getFilePath(file.id, files),
-        content,
-        language: getLanguage(file.name),
-        isDirty: false,
-      };
+      try {
+        const { content } = await readFile(file.path);
+        const newFile: OpenFile = {
+          id: file.id,
+          name: file.name,
+          path: file.path,
+          content,
+          language: getLanguage(file.name),
+          isDirty: false,
+        };
 
-      setOpenFiles((prev) => [...prev, newFile]);
-      setActiveFileId(file.id);
+        setOpenFiles((prev) => [...prev, newFile]);
+        setActiveFileId(file.id);
+      } catch (error: any) {
+        toast({
+          title: "Error opening file",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
     },
-    [openFiles, files]
+    [openFiles, toast]
   );
 
   const handleFileChange = useCallback((fileId: string, content: string) => {
@@ -232,12 +144,27 @@ export default function IDELayout() {
     );
   }, []);
 
-  const handleFileSave = useCallback((fileId: string) => {
-    setOpenFiles((prev) =>
-      prev.map((f) => (f.id === fileId ? { ...f, isDirty: false } : f))
-    );
-    console.log(`File saved: ${fileId}`);
-  }, []);
+  const handleFileSave = useCallback(async (fileId: string) => {
+    const file = openFiles.find((f) => f.id === fileId);
+    if (!file) return;
+
+    try {
+      await writeFile(file.path, file.content);
+      setOpenFiles((prev) =>
+        prev.map((f) => (f.id === fileId ? { ...f, isDirty: false } : f))
+      );
+      toast({
+        title: "File saved",
+        description: file.name,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error saving file",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  }, [openFiles, toast]);
 
   const handleFileClose = useCallback(
     (fileId: string) => {
@@ -251,105 +178,100 @@ export default function IDELayout() {
   );
 
   const handleCreateFile = useCallback(
-    (parentId: string | null, name: string) => {
-      const newId = `new-${Date.now()}`;
-      const extension = name.split(".").pop() || "";
-      const newFile: FileNode = {
-        id: newId,
-        name,
-        type: "file",
-        extension,
-      };
-
-      if (parentId === null) {
-        setFiles((prev) => [...prev, newFile]);
-      } else {
-        const addToParent = (nodes: FileNode[]): FileNode[] => {
-          return nodes.map((node) => {
-            if (node.id === parentId && node.type === "folder") {
-              return {
-                ...node,
-                children: [...(node.children || []), newFile],
-              };
-            }
-            if (node.children) {
-              return { ...node, children: addToParent(node.children) };
-            }
-            return node;
-          });
-        };
-        setFiles(addToParent);
+    async (parentPath: string | null, name: string) => {
+      try {
+        const filePath = parentPath ? `${parentPath}/${name}` : name;
+        await writeFile(filePath, "");
+        await loadFileTree();
+        toast({
+          title: "File created",
+          description: name,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error creating file",
+          description: error.message,
+          variant: "destructive",
+        });
       }
     },
-    []
+    [loadFileTree, toast]
   );
 
   const handleCreateFolder = useCallback(
-    (parentId: string | null, name: string) => {
-      const newFolder: FileNode = {
-        id: `folder-${Date.now()}`,
-        name,
-        type: "folder",
-        children: [],
-      };
-
-      if (parentId === null) {
-        setFiles((prev) => [...prev, newFolder]);
-      } else {
-        const addToParent = (nodes: FileNode[]): FileNode[] => {
-          return nodes.map((node) => {
-            if (node.id === parentId && node.type === "folder") {
-              return {
-                ...node,
-                children: [...(node.children || []), newFolder],
-              };
-            }
-            if (node.children) {
-              return { ...node, children: addToParent(node.children) };
-            }
-            return node;
-          });
-        };
-        setFiles(addToParent);
+    async (parentPath: string | null, name: string) => {
+      try {
+        const folderPath = parentPath ? `${parentPath}/${name}` : name;
+        await createFolder(folderPath);
+        await loadFileTree();
+        toast({
+          title: "Folder created",
+          description: name,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error creating folder",
+          description: error.message,
+          variant: "destructive",
+        });
       }
     },
-    []
+    [loadFileTree, toast]
   );
 
-  const handleDelete = useCallback((id: string) => {
-    const removeNode = (nodes: FileNode[]): FileNode[] => {
-      return nodes
-        .filter((node) => node.id !== id)
-        .map((node) => ({
-          ...node,
-          children: node.children ? removeNode(node.children) : undefined,
-        }));
-    };
-    setFiles(removeNode);
-    setOpenFiles((prev) => prev.filter((f) => f.id !== id));
-    if (activeFileId === id) {
-      setActiveFileId(null);
-    }
-  }, [activeFileId]);
+  const handleDelete = useCallback(
+    async (filePath: string) => {
+      try {
+        await deleteFile(filePath);
+        await loadFileTree();
+        // Close the file if it's open
+        const fileToClose = openFiles.find((f) => f.path === filePath);
+        if (fileToClose) {
+          handleFileClose(fileToClose.id);
+        }
+        toast({
+          title: "Deleted",
+          description: filePath,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error deleting",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [loadFileTree, openFiles, handleFileClose, toast]
+  );
 
-  const handleRename = useCallback((id: string, newName: string) => {
-    const renameNode = (nodes: FileNode[]): FileNode[] => {
-      return nodes.map((node) => {
-        if (node.id === id) {
-          const extension = newName.split(".").pop();
-          return { ...node, name: newName, extension };
-        }
-        if (node.children) {
-          return { ...node, children: renameNode(node.children) };
-        }
-        return node;
-      });
-    };
-    setFiles(renameNode);
-    setOpenFiles((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, name: newName } : f))
-    );
-  }, []);
+  const handleRename = useCallback(
+    async (oldPath: string, newName: string) => {
+      try {
+        const parts = oldPath.split("/");
+        parts[parts.length - 1] = newName;
+        const newPath = parts.join("/");
+        await renameFile(oldPath, newPath);
+        await loadFileTree();
+        // Update open file if renamed
+        setOpenFiles((prev) =>
+          prev.map((f) =>
+            f.path === oldPath ? { ...f, name: newName, path: newPath } : f
+          )
+        );
+        toast({
+          title: "Renamed",
+          description: `${oldPath} → ${newPath}`,
+        });
+      } catch (error: any) {
+        toast({
+          title: "Error renaming",
+          description: error.message,
+          variant: "destructive",
+        });
+      }
+    },
+    [loadFileTree, toast]
+  );
 
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
@@ -364,6 +286,20 @@ export default function IDELayout() {
         </div>
 
         <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={loadFileTree}
+                data-testid="refresh-files"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh Files</TooltipContent>
+          </Tooltip>
+
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -445,10 +381,10 @@ export default function IDELayout() {
                 <FileTree
                   files={files}
                   onFileSelect={handleFileSelect}
-                  onCreateFile={handleCreateFile}
-                  onCreateFolder={handleCreateFolder}
-                  onDelete={handleDelete}
-                  onRename={handleRename}
+                  onCreateFile={(parentPath, name) => handleCreateFile(parentPath, name)}
+                  onCreateFolder={(parentPath, name) => handleCreateFolder(parentPath, name)}
+                  onDelete={(path) => handleDelete(path)}
+                  onRename={(oldPath, newName) => handleRename(oldPath, newName)}
                   selectedFileId={activeFileId || undefined}
                 />
               </ResizablePanel>

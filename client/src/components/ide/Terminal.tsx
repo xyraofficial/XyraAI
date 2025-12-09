@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Terminal as TerminalIcon, X, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { executeCommand } from "@/lib/api";
 
 interface TerminalLine {
   id: string;
@@ -18,13 +18,11 @@ interface TerminalSession {
 }
 
 interface TerminalProps {
-  onCommand?: (command: string) => Promise<string>;
   initialDirectory?: string;
 }
 
 export default function Terminal({ 
-  onCommand,
-  initialDirectory = "~/workspace"
+  initialDirectory = ""
 }: TerminalProps) {
   const [sessions, setSessions] = useState<TerminalSession[]>([
     {
@@ -34,7 +32,7 @@ export default function Terminal({
         {
           id: "welcome",
           type: "system",
-          content: "Welcome to DevSpace Terminal. Type 'help' for available commands.",
+          content: "DevSpace Terminal - Connected to real shell. Try: ls, pwd, npm, git, python, etc.",
           timestamp: new Date(),
         },
       ],
@@ -43,6 +41,7 @@ export default function Terminal({
   ]);
   const [activeSessionId, setActiveSessionId] = useState("1");
   const [input, setInput] = useState("");
+  const [isExecuting, setIsExecuting] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -89,111 +88,104 @@ export default function Terminal({
     setCommandHistory((prev) => [...prev, trimmedCommand]);
     setHistoryIndex(-1);
 
-    const [cmd, ...args] = trimmedCommand.split(" ");
+    // Handle built-in commands
+    if (trimmedCommand === "clear") {
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === activeSessionId
+            ? { ...session, lines: [] }
+            : session
+        )
+      );
+      return;
+    }
 
-    // todo: remove mock functionality - replace with real backend integration
-    switch (cmd.toLowerCase()) {
-      case "help":
-        addLine(
-          activeSessionId,
-          "output",
-          `Available commands:
-  help      - Show this help message
-  clear     - Clear terminal
-  ls        - List files
-  cd        - Change directory
-  pwd       - Print working directory
-  echo      - Print text
-  date      - Show current date/time
-  whoami    - Show current user
-  npm       - Node package manager
-  node      - Run Node.js`
-        );
-        break;
-      case "clear":
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.id === activeSessionId
-              ? { ...session, lines: [] }
-              : session
-          )
-        );
-        break;
-      case "ls":
-        addLine(
-          activeSessionId,
-          "output",
-          `src/           package.json    README.md
-node_modules/  tsconfig.json   vite.config.ts`
-        );
-        break;
-      case "pwd":
-        addLine(activeSessionId, "output", activeSession?.currentDirectory || "~");
-        break;
-      case "cd":
-        if (args[0]) {
+    if (trimmedCommand === "help") {
+      addLine(
+        activeSessionId,
+        "output",
+        `DevSpace Terminal - Real Shell Commands
+=========================================
+This terminal executes real commands on the server.
+
+Common commands:
+  ls          - List files and directories
+  pwd         - Print working directory
+  cat <file>  - View file contents
+  mkdir       - Create directory
+  rm          - Remove files
+  mv          - Move/rename files
+  cp          - Copy files
+  
+Development:
+  npm install - Install npm packages
+  npm run     - Run npm scripts
+  node        - Run Node.js
+  python      - Run Python
+  pip install - Install Python packages
+  
+Version Control:
+  git status  - Check git status
+  git clone   - Clone repository
+  git pull    - Pull changes
+  git push    - Push changes
+  
+System:
+  which       - Find command location
+  echo        - Print text
+  env         - Show environment variables
+  clear       - Clear terminal
+
+Note: Some commands may be restricted for security.`
+      );
+      return;
+    }
+
+    // Execute real command
+    setIsExecuting(true);
+    try {
+      const result = await executeCommand(trimmedCommand, activeSession?.currentDirectory);
+      
+      if (result.stdout) {
+        addLine(activeSessionId, "output", result.stdout.trim());
+      }
+      if (result.stderr) {
+        addLine(activeSessionId, result.success ? "output" : "error", result.stderr.trim());
+      }
+      if (!result.stdout && !result.stderr && result.success) {
+        // Command succeeded but no output (like mkdir, touch, etc.)
+      }
+      if (!result.success && !result.stderr) {
+        addLine(activeSessionId, "error", `Command failed with exit code: ${result.code}`);
+      }
+
+      // Handle cd command to track directory
+      if (trimmedCommand.startsWith("cd ")) {
+        const newDir = trimmedCommand.slice(3).trim();
+        if (result.success) {
           setSessions((prev) =>
             prev.map((session) =>
               session.id === activeSessionId
                 ? {
                     ...session,
-                    currentDirectory:
-                      args[0] === ".."
-                        ? session.currentDirectory.split("/").slice(0, -1).join("/") || "~"
-                        : `${session.currentDirectory}/${args[0]}`,
+                    currentDirectory: newDir.startsWith("/") 
+                      ? newDir 
+                      : `${session.currentDirectory}/${newDir}`.replace(/\/+/g, "/"),
                   }
                 : session
             )
           );
-        } else {
-          addLine(activeSessionId, "error", "cd: missing operand");
         }
-        break;
-      case "echo":
-        addLine(activeSessionId, "output", args.join(" "));
-        break;
-      case "date":
-        addLine(activeSessionId, "output", new Date().toString());
-        break;
-      case "whoami":
-        addLine(activeSessionId, "output", "developer");
-        break;
-      case "npm":
-        if (args[0] === "install" || args[0] === "i") {
-          addLine(activeSessionId, "output", `Installing ${args[1] || "dependencies"}...`);
-          setTimeout(() => {
-            addLine(activeSessionId, "output", "added 127 packages in 3.2s");
-          }, 1000);
-        } else if (args[0] === "run") {
-          addLine(activeSessionId, "output", `> ${args[1]}`);
-          addLine(activeSessionId, "output", "Starting development server...");
-        } else {
-          addLine(activeSessionId, "output", "npm <command>");
-        }
-        break;
-      case "node":
-        if (args[0]) {
-          addLine(activeSessionId, "output", `Running ${args[0]}...`);
-        } else {
-          addLine(activeSessionId, "output", "Welcome to Node.js v20.0.0");
-        }
-        break;
-      default:
-        if (onCommand) {
-          try {
-            const result = await onCommand(trimmedCommand);
-            addLine(activeSessionId, "output", result);
-          } catch (error) {
-            addLine(activeSessionId, "error", `Error: ${error}`);
-          }
-        } else {
-          addLine(activeSessionId, "error", `Command not found: ${cmd}`);
-        }
+      }
+    } catch (error: any) {
+      addLine(activeSessionId, "error", `Error: ${error.message}`);
+    } finally {
+      setIsExecuting(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" && !isExecuting) {
       processCommand(input);
       setInput("");
     } else if (e.key === "ArrowUp") {
@@ -216,10 +208,15 @@ node_modules/  tsconfig.json   vite.config.ts`
     } else if (e.key === "l" && e.ctrlKey) {
       e.preventDefault();
       setSessions((prev) =>
-        prev.map((session) =>
-          session.id === activeSessionId ? { ...session, lines: [] } : session
+        prev.map((s) =>
+          s.id === activeSessionId ? { ...s, lines: [] } : s
         )
       );
+    } else if (e.key === "c" && e.ctrlKey) {
+      if (isExecuting) {
+        addLine(activeSessionId, "system", "^C");
+        setIsExecuting(false);
+      }
     }
   };
 
@@ -330,9 +327,7 @@ node_modules/  tsconfig.json   vite.config.ts`
           </div>
         ))}
         <div className="flex items-center">
-          <span className="text-success mr-2">
-            {activeSession?.currentDirectory}$
-          </span>
+          <span className="text-success mr-2">$</span>
           <input
             ref={inputRef}
             type="text"
@@ -342,8 +337,13 @@ node_modules/  tsconfig.json   vite.config.ts`
             className="flex-1 bg-transparent outline-none caret-success"
             autoFocus
             spellCheck={false}
+            disabled={isExecuting}
+            placeholder={isExecuting ? "Executing..." : ""}
             data-testid="terminal-input"
           />
+          {isExecuting && (
+            <span className="text-muted-foreground animate-pulse">Running...</span>
+          )}
         </div>
       </div>
     </div>

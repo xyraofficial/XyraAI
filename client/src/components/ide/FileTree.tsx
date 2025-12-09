@@ -5,7 +5,6 @@ import {
   File, 
   Folder, 
   FolderOpen,
-  Plus,
   Upload,
   Download,
   MoreHorizontal,
@@ -21,7 +20,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
@@ -36,6 +34,7 @@ export interface FileNode {
   id: string;
   name: string;
   type: "file" | "folder";
+  path: string;
   children?: FileNode[];
   extension?: string;
 }
@@ -43,10 +42,10 @@ export interface FileNode {
 interface FileTreeProps {
   files: FileNode[];
   onFileSelect: (file: FileNode) => void;
-  onCreateFile?: (parentId: string | null, name: string) => void;
-  onCreateFolder?: (parentId: string | null, name: string) => void;
-  onDelete?: (id: string) => void;
-  onRename?: (id: string, newName: string) => void;
+  onCreateFile?: (parentPath: string | null, name: string) => void;
+  onCreateFolder?: (parentPath: string | null, name: string) => void;
+  onDelete?: (path: string) => void;
+  onRename?: (path: string, newName: string) => void;
   selectedFileId?: string;
 }
 
@@ -78,10 +77,10 @@ interface TreeItemProps {
   node: FileNode;
   depth: number;
   onFileSelect: (file: FileNode) => void;
-  onDelete?: (id: string) => void;
-  onRename?: (id: string, newName: string) => void;
-  onCreateFile?: (parentId: string, name: string) => void;
-  onCreateFolder?: (parentId: string, name: string) => void;
+  onDelete?: (path: string) => void;
+  onRename?: (path: string, newName: string) => void;
+  onCreateFile?: (parentPath: string, name: string) => void;
+  onCreateFolder?: (parentPath: string, name: string) => void;
   selectedFileId?: string;
 }
 
@@ -110,7 +109,7 @@ function TreeItem({
 
   const handleRename = () => {
     if (newName.trim() && newName !== node.name) {
-      onRename?.(node.id, newName.trim());
+      onRename?.(node.path, newName.trim());
     }
     setIsRenaming(false);
   };
@@ -120,14 +119,14 @@ function TreeItem({
       {node.type === "folder" && (
         <>
           <ContextMenuItem 
-            onClick={() => onCreateFile?.(node.id, "untitled.js")}
+            onClick={() => onCreateFile?.(node.path, "untitled.js")}
             data-testid={`context-new-file-${node.id}`}
           >
             <FilePlus className="w-4 h-4 mr-2" />
             New File
           </ContextMenuItem>
           <ContextMenuItem 
-            onClick={() => onCreateFolder?.(node.id, "new-folder")}
+            onClick={() => onCreateFolder?.(node.path, "new-folder")}
             data-testid={`context-new-folder-${node.id}`}
           >
             <FolderPlus className="w-4 h-4 mr-2" />
@@ -144,7 +143,7 @@ function TreeItem({
         Rename
       </ContextMenuItem>
       <ContextMenuItem 
-        onClick={() => onDelete?.(node.id)}
+        onClick={() => onDelete?.(node.path)}
         className="text-destructive"
         data-testid={`context-delete-${node.id}`}
       >
@@ -287,19 +286,26 @@ export default function FileTree({
       </div>
       <ScrollArea className="flex-1">
         <div className="py-2">
-          {files.map((node) => (
-            <TreeItem
-              key={node.id}
-              node={node}
-              depth={0}
-              onFileSelect={onFileSelect}
-              onDelete={onDelete}
-              onRename={onRename}
-              onCreateFile={onCreateFile}
-              onCreateFolder={onCreateFolder}
-              selectedFileId={selectedFileId}
-            />
-          ))}
+          {files.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+              <p>No files yet</p>
+              <p className="text-xs mt-1">Create a file or use terminal</p>
+            </div>
+          ) : (
+            files.map((node) => (
+              <TreeItem
+                key={node.id}
+                node={node}
+                depth={0}
+                onFileSelect={onFileSelect}
+                onDelete={onDelete}
+                onRename={onRename}
+                onCreateFile={onCreateFile}
+                onCreateFolder={onCreateFolder}
+                selectedFileId={selectedFileId}
+              />
+            ))
+          )}
         </div>
       </ScrollArea>
     </div>

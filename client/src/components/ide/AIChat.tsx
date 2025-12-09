@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Code, Copy, Check, Trash2, Settings } from "lucide-react";
+import { Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -12,24 +12,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { sendChatMessage, getApiStatus } from "@/lib/api";
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
-  codeBlocks?: { language: string; code: string }[];
 }
 
-interface AIChatProps {
-  onSendMessage?: (message: string) => Promise<string>;
-  apiConnected?: boolean;
-}
-
-export default function AIChat({ 
-  onSendMessage,
-  apiConnected = true 
-}: AIChatProps) {
+export default function AIChat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "welcome",
@@ -41,16 +33,25 @@ export default function AIChat({
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState("claude-3.5-sonnet");
+  const [selectedModel, setSelectedModel] = useState("anthropic/claude-3.5-sonnet");
+  const [apiConnected, setApiConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const models = [
-    { id: "claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
-    { id: "gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
-    { id: "gemini-pro", name: "Gemini Pro", provider: "Google" },
-    { id: "llama-3-70b", name: "Llama 3 70B", provider: "Meta" },
+    { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
+    { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+    { id: "google/gemini-pro", name: "Gemini Pro", provider: "Google" },
+    { id: "meta-llama/llama-3-70b-instruct", name: "Llama 3 70B", provider: "Meta" },
   ];
+
+  useEffect(() => {
+    getApiStatus().then((status) => {
+      setApiConnected(status.aiConfigured);
+    }).catch(() => {
+      setApiConnected(false);
+    });
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
@@ -61,19 +62,6 @@ export default function AIChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages, scrollToBottom]);
-
-  const extractCodeBlocks = (content: string): { language: string; code: string }[] => {
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    const blocks: { language: string; code: string }[] = [];
-    let match;
-    while ((match = codeBlockRegex.exec(content)) !== null) {
-      blocks.push({
-        language: match[1] || "plaintext",
-        code: match[2].trim(),
-      });
-    }
-    return blocks;
-  };
 
   const handleSend = async () => {
     const trimmedInput = input.trim();
@@ -91,38 +79,21 @@ export default function AIChat({
     setIsLoading(true);
 
     try {
-      // todo: remove mock functionality - replace with real OpenRouter API call
-      let response: string;
-      if (onSendMessage) {
-        response = await onSendMessage(trimmedInput);
-      } else {
-        await new Promise((resolve) => setTimeout(resolve, 1500));
-        if (trimmedInput.toLowerCase().includes("hello") || trimmedInput.toLowerCase().includes("hi")) {
-          response = "Hello! How can I help you with your code today?";
-        } else if (trimmedInput.toLowerCase().includes("function") || trimmedInput.toLowerCase().includes("code")) {
-          response = `Here's an example function that might help:\n\n\`\`\`javascript\nfunction greet(name) {\n  return \`Hello, \${name}!\`;\n}\n\n// Usage\nconsole.log(greet("Developer"));\n\`\`\`\n\nThis is a simple function that takes a name parameter and returns a greeting string. Would you like me to explain any part of this code?`;
-        } else if (trimmedInput.toLowerCase().includes("error") || trimmedInput.toLowerCase().includes("bug")) {
-          response = "I'd be happy to help debug your code. Could you please:\n\n1. Share the error message you're seeing\n2. Provide the relevant code snippet\n3. Describe what you expected to happen\n\nThis will help me identify the issue more quickly.";
-        } else {
-          response = `I understand you're asking about "${trimmedInput.slice(0, 50)}..."\n\nLet me help you with that. Could you provide more context or share the specific code you're working with? This will help me give you a more accurate response.`;
-        }
-      }
+      const response = await sendChatMessage(trimmedInput, selectedModel);
 
-      const codeBlocks = extractCodeBlocks(response);
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: "assistant",
         content: response,
         timestamp: new Date(),
-        codeBlocks,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
+    } catch (error: any) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: "Sorry, I encountered an error. Please try again.",
+        content: `Sorry, I encountered an error: ${error.message}. Please try again.`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -204,7 +175,7 @@ export default function AIChat({
           <Sparkles className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">AI Assistant</span>
           <Badge variant={apiConnected ? "default" : "destructive"} className="text-xs">
-            {apiConnected ? "Connected" : "Offline"}
+            {apiConnected ? "Connected" : "Not Configured"}
           </Badge>
         </div>
         <div className="flex items-center gap-1">
