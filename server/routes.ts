@@ -234,12 +234,29 @@ export async function registerRoutes(
 
       const workDir = cwd ? path.join(WORKSPACE_DIR, cwd) : WORKSPACE_DIR;
       
+      // Block apt/brew/yum commands with helpful message
+      const blockedCommands = ['apt', 'apt-get', 'brew', 'yum', 'dnf', 'pacman', 'apk'];
+      const firstWord = command.trim().split(/\s+/)[0];
+      if (blockedCommands.includes(firstWord)) {
+        return res.json({
+          success: false,
+          stdout: "",
+          stderr: `Tools like apt, brew, and yum are not available in this environment.\nUse pip for Python packages: pip install <package>\nOr ask the developer to add system dependencies.`,
+          code: 1,
+        });
+      }
+
       // Execute command with timeout
       const { stdout, stderr } = await execPromise(command, {
         cwd: workDir,
         timeout: 30000, // 30 second timeout
         maxBuffer: 1024 * 1024 * 10, // 10MB buffer
-        env: { ...process.env, HOME: WORKSPACE_DIR },
+        shell: '/bin/bash',
+        env: { 
+          ...process.env, 
+          HOME: WORKSPACE_DIR,
+          PATH: process.env.PATH || '/usr/bin:/bin',
+        },
       });
 
       res.json({
