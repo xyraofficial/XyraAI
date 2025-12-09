@@ -61,16 +61,17 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState("anthropic/claude-3.5-sonnet");
+  const [selectedModel, setSelectedModel] = useState("meta-llama/llama-3.2-3b-instruct:free");
   const [apiConnected, setApiConnected] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const models = [
+    { id: "meta-llama/llama-3.2-3b-instruct:free", name: "Llama 3.2 3B (Free)", provider: "Meta" },
+    { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", provider: "Meta" },
+    { id: "google/gemma-2-9b-it:free", name: "Gemma 2 9B (Free)", provider: "Google" },
     { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
     { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
-    { id: "google/gemini-pro", name: "Gemini Pro", provider: "Google" },
-    { id: "meta-llama/llama-3-70b-instruct", name: "Llama 3 70B", provider: "Meta" },
   ];
 
   useEffect(() => {

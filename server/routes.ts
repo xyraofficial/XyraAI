@@ -469,7 +469,7 @@ Response: I'll create a hello.js file for you.
 
   app.post("/api/chat", async (req, res) => {
     try {
-      const { message, model = "anthropic/claude-3.5-sonnet", context } = req.body;
+      const { message, model = "meta-llama/llama-3.2-3b-instruct:free", context } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
