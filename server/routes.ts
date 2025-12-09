@@ -4,6 +4,7 @@ import { spawn, exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
+import { GoogleGenAI } from "@google/genai";
 
 const execPromise = promisify(exec);
 
@@ -15,9 +16,9 @@ if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
-// OpenRouter API configuration
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Gemini API configuration
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 interface FileNode {
   id: string;
@@ -469,16 +470,16 @@ Response: I'll create a hello.js file for you.
 
   app.post("/api/chat", async (req, res) => {
     try {
-      const { message, model = "meta-llama/llama-3.2-3b-instruct:free", context } = req.body;
+      const { message, context } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
       }
 
-      if (!OPENROUTER_API_KEY) {
+      if (!ai) {
         return res.status(500).json({ 
-          error: "OpenRouter API key not configured",
-          response: "I'm sorry, but the AI service is not configured yet. Please add your OpenRouter API key to use the AI assistant."
+          error: "Gemini API key not configured",
+          response: "I'm sorry, but the AI service is not configured yet. Please add your Gemini API key to use the AI assistant."
         });
       }
 
@@ -493,55 +494,17 @@ Response: I'll create a hello.js file for you.
 
       const userMessage = message + contextInfo;
 
-      const response = await fetch(OPENROUTER_API_URL, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://devspace.replit.app",
-          "X-Title": "DevSpace IDE",
+      // Use Gemini API
+      const response = await ai.models.generateContent({
+        model: "gemini-2.0-flash",
+        config: {
+          systemInstruction: AGENT_SYSTEM_PROMPT,
+          maxOutputTokens: 2000,
         },
-        body: JSON.stringify({
-          model,
-          max_tokens: 1500,
-          messages: [
-            { role: "system", content: AGENT_SYSTEM_PROMPT },
-            { role: "user", content: userMessage }
-          ],
-        }),
+        contents: userMessage,
       });
 
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error("OpenRouter API error:", response.status, errorData);
-        
-        let errorMessage = "Sorry, there was an error communicating with the AI service.";
-        try {
-          const parsed = JSON.parse(errorData);
-          if (parsed.error?.message) {
-            errorMessage = `AI Error: ${parsed.error.message}`;
-          }
-        } catch (e) {
-          // Keep default message
-        }
-        
-        // Handle specific status codes
-        if (response.status === 401) {
-          errorMessage = "API key is invalid or expired. Please check your OpenRouter API key.";
-        } else if (response.status === 402) {
-          errorMessage = "Insufficient credits on OpenRouter. Please add credits to your account.";
-        } else if (response.status === 429) {
-          errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
-        }
-        
-        return res.status(response.status).json({ 
-          error: "AI service error",
-          response: errorMessage
-        });
-      }
-
-      const data = await response.json();
-      const aiContent = data.choices?.[0]?.message?.content || "No response generated";
+      const aiContent = response.text || "No response generated";
 
       // Parse and execute tool calls
       const { text, tools } = parseToolCalls(aiContent);
@@ -570,7 +533,7 @@ Response: I'll create a hello.js file for you.
   // Check API status
   app.get("/api/status", (req, res) => {
     res.json({
-      aiConfigured: !!OPENROUTER_API_KEY,
+      aiConfigured: !!GEMINI_API_KEY,
       workspaceDir: WORKSPACE_DIR,
     });
   });
