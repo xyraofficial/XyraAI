@@ -4,7 +4,7 @@ import { spawn, exec } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 
 const execPromise = promisify(exec);
 
@@ -16,9 +16,12 @@ if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
-// Gemini API configuration
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+// Groq API configuration (OpenAI-compatible)
+const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
+const ai = GROQ_API_KEY ? new OpenAI({
+  apiKey: GROQ_API_KEY,
+  baseURL: "https://api.groq.com/openai/v1",
+}) : null;
 
 interface FileNode {
   id: string;
@@ -478,8 +481,8 @@ Response: I'll create a hello.js file for you.
 
       if (!ai) {
         return res.status(500).json({ 
-          error: "Gemini API key not configured",
-          response: "I'm sorry, but the AI service is not configured yet. Please add your Gemini API key to use the AI assistant."
+          error: "Groq API key not configured",
+          response: "I'm sorry, but the AI service is not configured yet. Please add your Groq API key to use the AI assistant."
         });
       }
 
@@ -494,17 +497,17 @@ Response: I'll create a hello.js file for you.
 
       const userMessage = message + contextInfo;
 
-      // Use Gemini API
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
-        config: {
-          systemInstruction: AGENT_SYSTEM_PROMPT,
-          maxOutputTokens: 2000,
-        },
-        contents: userMessage,
+      // Use Groq API (OpenAI-compatible)
+      const response = await ai.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: AGENT_SYSTEM_PROMPT },
+          { role: "user", content: userMessage }
+        ],
+        max_tokens: 2000,
       });
 
-      const aiContent = response.text || "No response generated";
+      const aiContent = response.choices[0]?.message?.content || "No response generated";
 
       // Parse and execute tool calls
       const { text, tools } = parseToolCalls(aiContent);
@@ -533,7 +536,7 @@ Response: I'll create a hello.js file for you.
   // Check API status
   app.get("/api/status", (req, res) => {
     res.json({
-      aiConfigured: !!GEMINI_API_KEY,
+      aiConfigured: !!GROQ_API_KEY,
       workspaceDir: WORKSPACE_DIR,
     });
   });
