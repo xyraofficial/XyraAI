@@ -1,9 +1,9 @@
-modules = ["nodejs-20", "web", "postgresql-16", "python-3.11"]
+modules = ["nodejs-20", "web", "python-3.12"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
-channel = "stable-24_05"
+channel = "stable-25_05"
 packages = ["git", "curl", "wget", "jq", "ffmpeg", "imagemagick", "zip", "unzip", "htop", "tree", "ripgrep", "python311Packages.pip"]
 
 [deployment]
@@ -30,6 +30,10 @@ externalPort = 3001
 [[ports]]
 localPort = 37681
 externalPort = 3000
+
+[[ports]]
+localPort = 45071
+externalPort = 5000
 
 [[ports]]
 localPort = 45119
