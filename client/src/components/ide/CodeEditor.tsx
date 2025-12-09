@@ -497,23 +497,6 @@ export default function CodeEditor({
       }
     }
 
-    if (e.key === 'Enter') {
-      const textarea = textareaRef.current;
-      if (textarea && activeFile) {
-        e.preventDefault();
-        const start = textarea.selectionStart;
-        const textBefore = activeFile.content.substring(0, start);
-        const currentLine = textBefore.split('\n').pop() || '';
-        const indent = currentLine.match(/^\s*/)?.[0] || '';
-        const newContent = activeFile.content.substring(0, start) + '\n' + indent + activeFile.content.substring(textarea.selectionEnd);
-        onFileChange(activeFile.id, newContent);
-        setTimeout(() => {
-          const newPos = start + 1 + indent.length;
-          textarea.selectionStart = textarea.selectionEnd = newPos;
-          updateCursorPosition();
-        }, 0);
-      }
-    }
   }, [activeFileId, activeFile, onFileSave, onFileChange]);
 
   const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -648,7 +631,7 @@ export default function CodeEditor({
         <div className="flex-1 relative overflow-hidden">
           <pre
             ref={preRef}
-            className="absolute inset-0 p-2 font-mono text-sm leading-6 whitespace-pre overflow-auto pointer-events-none"
+            className="absolute inset-0 p-2 font-mono text-sm leading-6 whitespace-pre-wrap break-words overflow-auto pointer-events-none"
             dangerouslySetInnerHTML={{
               __html: syntaxHighlight(activeFile?.content || '', language)
             }}
@@ -662,7 +645,7 @@ export default function CodeEditor({
             onSelect={updateCursorPosition}
             onClick={updateCursorPosition}
             onScroll={handleScroll}
-            className="absolute inset-0 w-full h-full p-2 font-mono text-sm leading-6 bg-transparent text-transparent caret-foreground resize-none outline-none overflow-auto"
+            className="absolute inset-0 w-full h-full p-2 font-mono text-sm leading-6 whitespace-pre-wrap break-words bg-transparent text-transparent caret-foreground resize-none outline-none overflow-auto"
             spellCheck={false}
             data-testid="code-textarea"
           />
