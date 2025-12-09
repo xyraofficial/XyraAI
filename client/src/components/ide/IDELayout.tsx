@@ -1,20 +1,16 @@
 import { useState, useCallback, useEffect } from "react";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
 import {
-  PanelLeft,
-  PanelRight,
-  PanelBottom,
-  Package,
+  FolderTree,
+  Code,
+  Terminal as TerminalIcon,
   Sparkles,
+  Package,
   Settings,
   Moon,
   Sun,
   RefreshCw,
+  Menu,
 } from "lucide-react";
 import FileTree, { type FileNode } from "./FileTree";
 import CodeEditor, { getLanguageFromExtension } from "./CodeEditor";
@@ -36,6 +32,11 @@ import {
   renameFile,
   type FileNode as ApiFileNode,
 } from "@/lib/api";
+import {
+  Sheet,
+  SheetContent,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 interface OpenFile {
   id: string;
@@ -46,16 +47,16 @@ interface OpenFile {
   isDirty: boolean;
 }
 
+type ActiveTab = "files" | "editor" | "terminal" | "ai" | "packages";
+
 export default function IDELayout() {
   const [files, setFiles] = useState<FileNode[]>([]);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
-  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
-  const [bottomPanelCollapsed, setBottomPanelCollapsed] = useState(false);
-  const [rightPanelTab, setRightPanelTab] = useState<"ai" | "packages">("ai");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("editor");
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
   const { toast } = useToast();
 
   const loadFileTree = useCallback(async () => {
@@ -111,6 +112,7 @@ export default function IDELayout() {
       const existing = openFiles.find((f) => f.id === file.id);
       if (existing) {
         setActiveFileId(file.id);
+        setActiveTab("editor");
         return;
       }
 
@@ -127,6 +129,7 @@ export default function IDELayout() {
 
         setOpenFiles((prev) => [...prev, newFile]);
         setActiveFileId(file.id);
+        setActiveTab("editor");
       } catch (error: any) {
         toast({
           title: "Error opening file",
@@ -226,7 +229,6 @@ export default function IDELayout() {
       try {
         await deleteFile(filePath);
         await loadFileTree();
-        // Close the file if it's open
         const fileToClose = openFiles.find((f) => f.path === filePath);
         if (fileToClose) {
           handleFileClose(fileToClose.id);
@@ -254,7 +256,6 @@ export default function IDELayout() {
         const newPath = parts.join("/");
         await renameFile(oldPath, newPath);
         await loadFileTree();
-        // Update open file if renamed
         setOpenFiles((prev) =>
           prev.map((f) =>
             f.path === oldPath ? { ...f, name: newName, path: newPath } : f
@@ -275,25 +276,73 @@ export default function IDELayout() {
     [loadFileTree, toast]
   );
 
+  const renderContent = () => {
+    switch (activeTab) {
+      case "files":
+        return (
+          <div className="h-full">
+            <FileTree
+              files={files}
+              onFileSelect={handleFileSelect}
+              onCreateFile={(parentPath, name) => handleCreateFile(parentPath, name)}
+              onCreateFolder={(parentPath, name) => handleCreateFolder(parentPath, name)}
+              onDelete={(path) => handleDelete(path)}
+              onRename={(oldPath, newName) => handleRename(oldPath, newName)}
+              selectedFileId={activeFileId || undefined}
+            />
+          </div>
+        );
+      case "editor":
+        return (
+          <CodeEditor
+            openFiles={openFiles}
+            activeFileId={activeFileId}
+            onFileChange={handleFileChange}
+            onFileSave={handleFileSave}
+            onFileClose={handleFileClose}
+            onTabSelect={setActiveFileId}
+          />
+        );
+      case "terminal":
+        return <Terminal />;
+      case "ai":
+        return (
+          <AIChat 
+            currentFile={activeFileId ? openFiles.find(f => f.id === activeFileId) : undefined}
+            onFileChange={handleAIFileChange}
+          />
+        );
+      case "packages":
+        return <PackageManager />;
+    }
+  };
+
+  const tabs: { id: ActiveTab; icon: React.ReactNode; label: string }[] = [
+    { id: "files", icon: <FolderTree className="w-5 h-5" />, label: "Files" },
+    { id: "editor", icon: <Code className="w-5 h-5" />, label: "Editor" },
+    { id: "terminal", icon: <TerminalIcon className="w-5 h-5" />, label: "Terminal" },
+    { id: "ai", icon: <Sparkles className="w-5 h-5" />, label: "AI" },
+    { id: "packages", icon: <Package className="w-5 h-5" />, label: "Packages" },
+  ];
+
   return (
     <div className="h-screen w-screen flex flex-col bg-background overflow-hidden">
-      <header className="flex items-center justify-between gap-3 px-3 py-2 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">DS</span>
-            </div>
-            <span className="font-semibold text-lg">DevSpace</span>
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
+            <span className="text-primary-foreground font-bold text-sm">DS</span>
           </div>
+          <span className="font-semibold text-base">DevSpace</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 size="icon"
                 variant="ghost"
                 onClick={loadFileTree}
+                className="h-8 w-8"
                 data-testid="refresh-files"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />
@@ -302,162 +351,64 @@ export default function IDELayout() {
             <TooltipContent>Refresh Files</TooltipContent>
           </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-                data-testid="toggle-left-panel"
-              >
-                <PanelLeft className="w-4 h-4" />
+          <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+            <SheetTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-8 w-8">
+                <Menu className="w-4 h-4" />
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle File Explorer</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setBottomPanelCollapsed(!bottomPanelCollapsed)}
-                data-testid="toggle-bottom-panel"
-              >
-                <PanelBottom className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle Terminal</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setRightPanelCollapsed(!rightPanelCollapsed)}
-                data-testid="toggle-right-panel"
-              >
-                <PanelRight className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle AI & Packages</TooltipContent>
-          </Tooltip>
-
-          <div className="w-px h-6 bg-border mx-1" />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={toggleDarkMode}
-                data-testid="toggle-theme"
-              >
-                {isDarkMode ? (
-                  <Sun className="w-4 h-4" />
-                ) : (
-                  <Moon className="w-4 h-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Toggle Theme</TooltipContent>
-          </Tooltip>
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button size="icon" variant="ghost" data-testid="button-settings">
-                <Settings className="w-4 h-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Settings</TooltipContent>
-          </Tooltip>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[250px] p-4">
+              <div className="flex flex-col gap-4 mt-6">
+                <h3 className="font-semibold text-lg">Settings</h3>
+                <Button
+                  variant="ghost"
+                  className="justify-start gap-3"
+                  onClick={() => {
+                    toggleDarkMode();
+                    setMenuOpen(false);
+                  }}
+                >
+                  {isDarkMode ? (
+                    <Sun className="w-5 h-5" />
+                  ) : (
+                    <Moon className="w-5 h-5" />
+                  )}
+                  {isDarkMode ? "Light Mode" : "Dark Mode"}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="justify-start gap-3"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <Settings className="w-5 h-5" />
+                  Settings
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
         </div>
       </header>
 
       <div className="flex-1 overflow-hidden">
-        <ResizablePanelGroup direction="horizontal">
-          {!leftPanelCollapsed && (
-            <>
-              <ResizablePanel defaultSize={18} minSize={12} maxSize={30}>
-                <FileTree
-                  files={files}
-                  onFileSelect={handleFileSelect}
-                  onCreateFile={(parentPath, name) => handleCreateFile(parentPath, name)}
-                  onCreateFolder={(parentPath, name) => handleCreateFolder(parentPath, name)}
-                  onDelete={(path) => handleDelete(path)}
-                  onRename={(oldPath, newName) => handleRename(oldPath, newName)}
-                  selectedFileId={activeFileId || undefined}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-            </>
-          )}
-
-          <ResizablePanel defaultSize={rightPanelCollapsed ? 82 : 57}>
-            <ResizablePanelGroup direction="vertical">
-              <ResizablePanel defaultSize={bottomPanelCollapsed ? 100 : 70}>
-                <CodeEditor
-                  openFiles={openFiles}
-                  activeFileId={activeFileId}
-                  onFileChange={handleFileChange}
-                  onFileSave={handleFileSave}
-                  onFileClose={handleFileClose}
-                  onTabSelect={setActiveFileId}
-                />
-              </ResizablePanel>
-              {!bottomPanelCollapsed && (
-                <>
-                  <ResizableHandle withHandle />
-                  <ResizablePanel defaultSize={30} minSize={15} maxSize={50}>
-                    <Terminal />
-                  </ResizablePanel>
-                </>
-              )}
-            </ResizablePanelGroup>
-          </ResizablePanel>
-
-          {!rightPanelCollapsed && (
-            <>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={25} minSize={20} maxSize={40}>
-                <div className="h-full flex flex-col">
-                  <div className="flex items-center gap-1 p-1 border-b border-border bg-background/50">
-                    <Button
-                      size="sm"
-                      variant={rightPanelTab === "ai" ? "secondary" : "ghost"}
-                      className="flex-1 h-8"
-                      onClick={() => setRightPanelTab("ai")}
-                      data-testid="tab-ai-assistant"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 mr-1.5" />
-                      AI Assistant
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant={rightPanelTab === "packages" ? "secondary" : "ghost"}
-                      className="flex-1 h-8"
-                      onClick={() => setRightPanelTab("packages")}
-                      data-testid="tab-packages"
-                    >
-                      <Package className="w-3.5 h-3.5 mr-1.5" />
-                      Packages
-                    </Button>
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    {rightPanelTab === "ai" ? (
-                      <AIChat 
-                        currentFile={activeFileId ? openFiles.find(f => f.id === activeFileId) : undefined}
-                        onFileChange={handleAIFileChange}
-                      />
-                    ) : <PackageManager />}
-                  </div>
-                </div>
-              </ResizablePanel>
-            </>
-          )}
-        </ResizablePanelGroup>
+        {renderContent()}
       </div>
+
+      <nav className="flex items-center justify-around border-t border-border bg-card py-2 shrink-0 safe-area-inset-bottom">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex flex-col items-center gap-1 px-3 py-1 rounded-lg transition-colors min-w-[60px] ${
+              activeTab === tab.id
+                ? "text-primary bg-primary/10"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.icon}
+            <span className="text-xs font-medium">{tab.label}</span>
+          </button>
+        ))}
+      </nav>
     </div>
   );
 }

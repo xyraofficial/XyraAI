@@ -67,3 +67,6 @@ waitForPort = 5000
 
 [userenv.shared]
 OPENROUTER_API_KEY = "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"
+
+[agent]
+expertMode = true
