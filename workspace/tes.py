@@ -6,10 +6,10 @@ def clear_screen():
 
 def animate():
     frames = [
-        '(^_^)',
-        '(^_~)',
-        '(^_^)',
-        '(~_^)'
+        '|',
+        '/',
+        '-',
+        '\'
     ]
     
     try:
@@ -17,7 +17,7 @@ def animate():
             for frame in frames:
                 clear_screen()
                 print('\n' * 3)
-                print(f'{" " * 10}{frame}')
+                print(f' {" " * 10}{frame}')
                 time.sleep(0.5)
     except KeyboardInterrupt:
         print('\nAnimasi selesai!')
