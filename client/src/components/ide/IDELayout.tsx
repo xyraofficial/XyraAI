@@ -74,6 +74,27 @@ export default function IDELayout() {
     }
   }, [toast]);
 
+  const refreshOpenFiles = useCallback(async () => {
+    if (openFiles.length === 0) return;
+    
+    const updatedFiles = await Promise.all(
+      openFiles.map(async (file) => {
+        try {
+          const { content } = await readFile(file.path);
+          return { ...file, content, isDirty: false };
+        } catch {
+          return file;
+        }
+      })
+    );
+    setOpenFiles(updatedFiles);
+  }, [openFiles]);
+
+  const handleAIFileChange = useCallback(async () => {
+    await loadFileTree();
+    await refreshOpenFiles();
+  }, [loadFileTree, refreshOpenFiles]);
+
   useEffect(() => {
     loadFileTree();
   }, [loadFileTree]);
@@ -427,7 +448,7 @@ export default function IDELayout() {
                     {rightPanelTab === "ai" ? (
                       <AIChat 
                         currentFile={activeFileId ? openFiles.find(f => f.id === activeFileId) : undefined}
-                        onFileChange={loadFileTree}
+                        onFileChange={handleAIFileChange}
                       />
                     ) : <PackageManager />}
                   </div>
