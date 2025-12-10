@@ -171,6 +171,16 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Keep refs for cleanup persistence
+  const messagesRef = useRef(messages);
+  const settingsRef = useRef(settings);
+  const chatHistoryRef = useRef(chatHistory);
+  
+  // Update refs when state changes
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { settingsRef.current = settings; }, [settings]);
+  useEffect(() => { chatHistoryRef.current = chatHistory; }, [chatHistory]);
 
   const models = [
     { id: "groq-llama3.3-70b", name: "Llama 3.3 70B", provider: "Groq", description: "Fast & powerful" },
@@ -179,22 +189,61 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
     { id: "google/gemma-2-9b-it:free", name: "Gemma 2 9B", provider: "OpenRouter", description: "Free tier" },
   ];
 
-  // Persist messages to localStorage
+  // Persist messages to localStorage immediately when they change
   useEffect(() => {
     if (settings.persistSession) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+      } catch (e) {
+        console.warn("Failed to persist chat messages:", e);
+      }
     }
   }, [messages, settings.persistSession]);
 
-  // Persist settings
+  // Persist settings immediately
   useEffect(() => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    } catch (e) {
+      console.warn("Failed to persist settings:", e);
+    }
   }, [settings]);
 
-  // Persist history
+  // Persist history immediately
   useEffect(() => {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory));
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory));
+    } catch (e) {
+      console.warn("Failed to persist chat history:", e);
+    }
   }, [chatHistory]);
+  
+  // Ensure state is saved before component unmounts
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (settingsRef.current.persistSession) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesRef.current));
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsRef.current));
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistoryRef.current));
+        } catch (e) {}
+      }
+    };
+    
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      // Save on unmount
+      if (settingsRef.current.persistSession) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(messagesRef.current));
+          localStorage.setItem(SETTINGS_KEY, JSON.stringify(settingsRef.current));
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistoryRef.current));
+        } catch (e) {}
+      }
+    };
+  }, []);
 
   useEffect(() => {
     getApiStatus().then((status) => {

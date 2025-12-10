@@ -6,8 +6,13 @@ import * as path from "path";
 import { promisify } from "util";
 import OpenAI from "openai";
 import archiver from "archiver";
+import { WebSocketServer, WebSocket } from "ws";
+import * as pty from "node-pty";
 
 const execPromise = promisify(exec);
+
+// Store active PTY sessions
+const ptyProcesses = new Map<string, pty.IPty>();
 
 // Workspace directory for user files
 const WORKSPACE_DIR = path.join(process.cwd(), "workspace");
@@ -955,6 +960,83 @@ Done. Run with: python app.py`;
       console.error("OnlyFans API error:", error);
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // ============ PTY WEBSOCKET FOR INTERACTIVE TERMINAL ============
+  const wss = new WebSocketServer({ server: httpServer, path: "/ws/terminal" });
+  
+  wss.on("connection", (ws: WebSocket) => {
+    const sessionId = `pty-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create PTY process
+    const shell = process.env.SHELL || "/bin/bash";
+    const ptyProcess = pty.spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: WORKSPACE_DIR,
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        HOME: process.env.HOME || "/home/runner",
+      } as { [key: string]: string },
+    });
+    
+    ptyProcesses.set(sessionId, ptyProcess);
+    
+    // Send session ID to client
+    ws.send(JSON.stringify({ type: "session", sessionId }));
+    
+    // Forward PTY output to WebSocket
+    ptyProcess.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "output", data }));
+      }
+    });
+    
+    ptyProcess.onExit(({ exitCode, signal }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "exit", exitCode, signal }));
+      }
+      ptyProcesses.delete(sessionId);
+    });
+    
+    // Handle messages from client
+    ws.on("message", (message: Buffer | string) => {
+      try {
+        const msg = JSON.parse(message.toString());
+        
+        switch (msg.type) {
+          case "input":
+            ptyProcess.write(msg.data);
+            break;
+          case "resize":
+            if (msg.cols && msg.rows) {
+              ptyProcess.resize(msg.cols, msg.rows);
+            }
+            break;
+          case "ping":
+            ws.send(JSON.stringify({ type: "pong" }));
+            break;
+        }
+      } catch (e) {
+        // If not JSON, treat as raw input
+        if (typeof message === "string") {
+          ptyProcess.write(message);
+        }
+      }
+    });
+    
+    ws.on("close", () => {
+      ptyProcess.kill();
+      ptyProcesses.delete(sessionId);
+    });
+    
+    ws.on("error", (err) => {
+      console.error("WebSocket error:", err);
+      ptyProcess.kill();
+      ptyProcesses.delete(sessionId);
+    });
   });
 
   return httpServer;

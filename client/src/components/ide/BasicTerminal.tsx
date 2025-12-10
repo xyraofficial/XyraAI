@@ -1,12 +1,9 @@
-import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
-import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2, Search, Sparkles, ChevronUp, ChevronDown, StopCircle, Monitor, Command } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2, Search, Sparkles, ChevronUp, ChevronDown, StopCircle, Monitor } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { executeCommand } from "@/lib/api";
 import { agentConsole, type AgentLog } from "@/lib/agentConsole";
-
-// Lazy load PTY Terminal
-const PTYTerminal = lazy(() => import("./PTYTerminal"));
 
 interface TerminalLine {
   id: string;
@@ -26,14 +23,14 @@ interface TerminalSession {
   envVars: Record<string, string>;
 }
 
-interface TerminalProps {
+interface BasicTerminalProps {
   initialDirectory?: string;
+  onSwitchToPTY: () => void;
 }
 
 const TERMINAL_STORAGE_KEY = "devspace_terminal_sessions";
 const TERMINAL_ACTIVE_KEY = "devspace_terminal_active";
 const TERMINAL_HISTORY_KEY = "devspace_terminal_history";
-const TERMINAL_MODE_KEY = "devspace_terminal_mode";
 
 function getInitialSessions(initialDirectory: string): TerminalSession[] {
   try {
@@ -108,51 +105,10 @@ function getInitialHistory(): string[] {
   return [];
 }
 
-export default function Terminal({ 
-  initialDirectory = ""
-}: TerminalProps) {
-  const [usePTY, setUsePTY] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(TERMINAL_MODE_KEY);
-      return saved === "pty";
-    } catch {
-      return false;
-    }
-  });
-  
-  // Save terminal mode preference
-  useEffect(() => {
-    try {
-      localStorage.setItem(TERMINAL_MODE_KEY, usePTY ? "pty" : "basic");
-    } catch {}
-  }, [usePTY]);
-  
-  // If PTY mode is enabled, render PTY terminal
-  if (usePTY) {
-    return (
-      <div className="flex flex-col h-full">
-        <div className="flex items-center gap-2 px-2 py-1 bg-background/80 border-b border-border">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-xs gap-1"
-            onClick={() => setUsePTY(false)}
-            data-testid="button-switch-basic"
-          >
-            <Command className="w-3 h-3" />
-            Switch to Basic
-          </Button>
-          <span className="text-xs text-muted-foreground ml-auto">Interactive mode (supports keyboard input)</span>
-        </div>
-        <div className="flex-1">
-          <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="w-6 h-6 animate-spin" /></div>}>
-            <PTYTerminal initialDirectory={initialDirectory} />
-          </Suspense>
-        </div>
-      </div>
-    );
-  }
-  
+export default function BasicTerminal({ 
+  initialDirectory = "",
+  onSwitchToPTY
+}: BasicTerminalProps) {
   const [sessions, setSessions] = useState<TerminalSession[]>(() => getInitialSessions(initialDirectory));
   const [activeSessionId, setActiveSessionId] = useState(() => getInitialActiveSession());
 
@@ -161,7 +117,7 @@ export default function Terminal({
     try {
       const sessionsToSave = sessions.map(s => ({
         ...s,
-        lines: s.lines.filter(l => l.type !== "executing").slice(-500), // Keep last 500 lines per session
+        lines: s.lines.filter(l => l.type !== "executing").slice(-500),
       }));
       localStorage.setItem(TERMINAL_STORAGE_KEY, JSON.stringify(sessionsToSave));
     } catch (e) {
@@ -244,12 +200,10 @@ export default function Terminal({
     scrollToBottom();
   }, [activeSession?.lines, scrollToBottom, isExecuting]);
 
-  // Clean up lineRefs when session changes
   useEffect(() => {
     lineRefs.current.clear();
   }, [activeSessionId, activeSession?.lines.length]);
 
-  // Search functionality
   useEffect(() => {
     if (!searchQuery || !activeSession) {
       setSearchMatches([]);
@@ -291,7 +245,6 @@ export default function Terminal({
     scrollToMatch(newIndex);
   };
 
-  // AI command generation
   const generateAiCommand = async () => {
     if (!aiQuery.trim()) return;
     
@@ -322,7 +275,6 @@ export default function Terminal({
     }
   };
 
-  // Highlight search matches in content
   const highlightContent = (content: string, lineIndex: number) => {
     if (!searchQuery || !searchMatches.includes(lineIndex)) {
       return content;
@@ -395,7 +347,6 @@ export default function Terminal({
     const trimmedCommand = command.trim();
     if (!trimmedCommand) return;
 
-    // Expand aliases
     let expandedCommand = trimmedCommand;
     const firstWord = trimmedCommand.split(/\s+/)[0];
     if (activeSession?.aliases[firstWord]) {
@@ -407,7 +358,6 @@ export default function Terminal({
     setHistoryIndex(-1);
     setAiSuggestion("");
 
-    // Handle built-in commands
     if (expandedCommand === "clear") {
       setSessions((prev) =>
         prev.map((session) =>
@@ -507,62 +457,26 @@ export default function Terminal({
 Built-in Commands:
   clear       - Clear terminal screen
   pwd         - Print working directory
-  cd <dir>    - Change directory (supports: cd, cd -, cd ~, cd ..)
+  cd <dir>    - Change directory
   history     - Show command history
-  alias       - List/create aliases (alias name='command')
+  alias       - List/create aliases
   unalias     - Remove an alias
   export      - Set environment variable
-  exit        - Exit information
   help        - Show this help
-
-Navigation:
-  cd          - Go to home directory
-  cd -        - Go to previous directory
-  cd ~        - Go to home directory
-  cd ..       - Go up one directory
-
-File Commands:
-  ls          - List files and directories
-  cat <file>  - View file contents
-  mkdir       - Create directory
-  rm          - Remove files
-  mv          - Move/rename files
-  cp          - Copy files
-  touch       - Create empty file
-
-Development:
-  npm install - Install npm packages
-  npm run     - Run npm scripts
-  node        - Run Node.js
-  python      - Run Python
-  pip install - Install Python packages
-
-Version Control:
-  git status  - Check git status
-  git clone   - Clone repository
-  git add     - Stage changes
-  git commit  - Commit changes
-  git push    - Push changes
-  git pull    - Pull changes
 
 Keyboard Shortcuts:
   Ctrl+L      - Clear terminal
   Ctrl+C      - Cancel/clear input
-  Ctrl+D      - EOF signal
-  Ctrl+U      - Clear input line
-  Ctrl+A      - Go to beginning of line
-  Ctrl+E      - Go to end of line
   Ctrl+F      - Search in output
   Ctrl+G      - AI command generator
   Up/Down     - Navigate history
 
-Note: Some system commands may be restricted for security.
-Note: Interactive scripts (like Python input()) are not supported.`
+For interactive scripts (like Python input()), click the 
+monitor icon to switch to Interactive Mode (PTY).`
       );
       return;
     }
 
-    // Handle cd command locally for better tracking
     if (expandedCommand === "cd" || expandedCommand === "cd ~") {
       setSessions((prev) =>
         prev.map((session) =>
@@ -596,20 +510,13 @@ Note: Interactive scripts (like Python input()) are not supported.`
       return;
     }
 
-    // Execute real command
     setIsExecuting(true);
     setExecutingCommand(expandedCommand);
-    
-    // Add executing line with animation
     addLine(activeSessionId, "executing", `Executing: ${expandedCommand}...`);
-
-    // Create abort controller for cancellation
     abortControllerRef.current = new AbortController();
     
     try {
       const result = await executeCommand(expandedCommand, activeSession?.currentDirectory, activeSession?.envVars);
-      
-      // Remove the executing line
       removeExecutingLine(activeSessionId);
       
       if (result.stdout) {
@@ -625,7 +532,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
         addLine(activeSessionId, "error", `Command failed with exit code: ${result.code}`);
       }
 
-      // Handle cd command to track directory
       if (expandedCommand.startsWith("cd ")) {
         const newDir = expandedCommand.slice(3).trim();
         if (result.success) {
@@ -797,7 +703,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
 
   return (
     <div className="flex flex-col h-full bg-terminal text-foreground font-mono text-sm">
-      {/* Terminal header with tabs and controls */}
       <div className="flex items-center gap-1 px-2 py-1 bg-background/80 border-b border-border">
         <TerminalIcon className="w-4 h-4 text-muted-foreground mr-2" />
         {sessions.map((session) => (
@@ -838,7 +743,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
           <Plus className="w-3 h-3" />
         </Button>
         
-        {/* Search button */}
         <Button
           size="icon"
           variant="ghost"
@@ -854,7 +758,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
           <Search className="w-3 h-3" />
         </Button>
         
-        {/* AI assist button */}
         <Button
           size="icon"
           variant="ghost"
@@ -870,19 +773,17 @@ Note: Interactive scripts (like Python input()) are not supported.`
           <Sparkles className="w-3 h-3" />
         </Button>
         
-        {/* PTY Mode toggle */}
         <Button
           size="icon"
           variant="ghost"
           className="h-6 w-6"
-          onClick={() => setUsePTY(true)}
+          onClick={onSwitchToPTY}
           title="Switch to Interactive Mode (PTY) - supports keyboard input"
           data-testid="button-switch-pty"
         >
           <Monitor className="w-3 h-3" />
         </Button>
         
-        {/* Clear button */}
         <Button
           size="icon"
           variant="ghost"
@@ -900,7 +801,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
         </Button>
       </div>
 
-      {/* Search bar */}
       {showSearch && (
         <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 border-b border-border">
           <Search className="w-4 h-4 text-muted-foreground" />
@@ -936,7 +836,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
         </div>
       )}
 
-      {/* AI command generator */}
       {showAiInput && (
         <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 border-b border-border">
           <Sparkles className="w-4 h-4 text-primary" />
@@ -972,7 +871,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
         </div>
       )}
 
-      {/* Terminal output */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-auto p-2 cursor-text"
@@ -1006,7 +904,6 @@ Note: Interactive scripts (like Python input()) are not supported.`
           </div>
         ))}
         
-        {/* Input prompt line */}
         <div className="flex items-center mt-1 flex-wrap gap-1">
           <span className="text-primary text-xs">{activeSession?.currentDirectory || "~"}</span>
           <span className="text-success">$</span>
