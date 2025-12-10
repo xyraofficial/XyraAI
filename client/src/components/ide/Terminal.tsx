@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2 } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2, Search, Sparkles, ChevronUp, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { executeCommand } from "@/lib/api";
 import { agentConsole, type AgentLog } from "@/lib/agentConsole";
 
@@ -89,13 +90,30 @@ export default function Terminal({
     });
     return unsubscribe;
   }, []);
+
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [executingCommand, setExecutingCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  
+  // Search feature states
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchMatches, setSearchMatches] = useState<number[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  
+  // AI assistance states
+  const [showAiInput, setShowAiInput] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState("");
+  
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
   const activeSession = sessions.find((s) => s.id === activeSessionId);
 
@@ -108,6 +126,109 @@ export default function Terminal({
   useEffect(() => {
     scrollToBottom();
   }, [activeSession?.lines, scrollToBottom, isExecuting]);
+
+  // Clean up lineRefs when session changes
+  useEffect(() => {
+    lineRefs.current.clear();
+  }, [activeSessionId, activeSession?.lines.length]);
+
+  // Search functionality
+  useEffect(() => {
+    if (!searchQuery || !activeSession) {
+      setSearchMatches([]);
+      setCurrentMatchIndex(0);
+      return;
+    }
+    
+    const matches: number[] = [];
+    const lowerQuery = searchQuery.toLowerCase();
+    activeSession.lines.forEach((line, index) => {
+      if (line.content.toLowerCase().includes(lowerQuery)) {
+        matches.push(index);
+      }
+    });
+    setSearchMatches(matches);
+    setCurrentMatchIndex(matches.length > 0 ? 0 : -1);
+  }, [searchQuery, activeSession?.lines]);
+
+  const scrollToMatch = useCallback((matchIndex: number) => {
+    if (searchMatches.length === 0) return;
+    const lineIndex = searchMatches[matchIndex];
+    const element = lineRefs.current.get(lineIndex);
+    if (element) {
+      element.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [searchMatches]);
+
+  const nextMatch = () => {
+    if (searchMatches.length === 0) return;
+    const newIndex = (currentMatchIndex + 1) % searchMatches.length;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
+  };
+
+  const prevMatch = () => {
+    if (searchMatches.length === 0) return;
+    const newIndex = currentMatchIndex === 0 ? searchMatches.length - 1 : currentMatchIndex - 1;
+    setCurrentMatchIndex(newIndex);
+    scrollToMatch(newIndex);
+  };
+
+  // AI command generation
+  const generateAiCommand = async () => {
+    if (!aiQuery.trim()) return;
+    
+    setIsAiLoading(true);
+    try {
+      const response = await fetch("/api/terminal/ai-suggest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: aiQuery }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.command) {
+          setAiSuggestion(data.command);
+          setInput(data.command);
+          setShowAiInput(false);
+          setAiQuery("");
+          inputRef.current?.focus();
+        }
+      } else {
+        addLine(activeSessionId, "error", "AI suggestion failed. Please try again.");
+      }
+    } catch (error) {
+      addLine(activeSessionId, "error", "AI service unavailable.");
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // Highlight search matches in content
+  const highlightContent = (content: string, lineIndex: number) => {
+    if (!searchQuery || !searchMatches.includes(lineIndex)) {
+      return content;
+    }
+    
+    const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    const parts = content.split(regex);
+    const isCurrentMatch = searchMatches[currentMatchIndex] === lineIndex;
+    
+    return parts.map((part, i) => {
+      if (part.toLowerCase() === searchQuery.toLowerCase()) {
+        return (
+          <mark 
+            key={i} 
+            className={`${isCurrentMatch ? 'bg-yellow-400 text-black' : 'bg-yellow-600/50 text-white'} rounded px-0.5`}
+          >
+            {part}
+          </mark>
+        );
+      }
+      return part;
+    });
+  };
 
   const addLine = (sessionId: string, type: TerminalLine["type"], content: string) => {
     setSessions((prev) =>
@@ -124,23 +245,6 @@ export default function Terminal({
                   timestamp: new Date(),
                 },
               ],
-            }
-          : session
-      )
-    );
-  };
-
-  const updateExecutingLine = (sessionId: string, content: string) => {
-    setSessions((prev) =>
-      prev.map((session) =>
-        session.id === sessionId
-          ? {
-              ...session,
-              lines: session.lines.map((line) =>
-                line.type === "executing"
-                  ? { ...line, content }
-                  : line
-              ),
             }
           : session
       )
@@ -174,6 +278,7 @@ export default function Terminal({
     addLine(activeSessionId, "input", `${activeSession?.currentDirectory || "~"}$ ${trimmedCommand}`);
     setCommandHistory((prev) => [...prev, trimmedCommand]);
     setHistoryIndex(-1);
+    setAiSuggestion("");
 
     // Handle built-in commands
     if (expandedCommand === "clear") {
@@ -320,6 +425,8 @@ Keyboard Shortcuts:
   Ctrl+U      - Clear input line
   Ctrl+A      - Go to beginning of line
   Ctrl+E      - Go to end of line
+  Ctrl+F      - Search in output
+  Ctrl+G      - AI command generator
   Up/Down     - Navigate history
 
 Note: Some system commands may be restricted for security.`
@@ -445,6 +552,16 @@ Note: Some system commands may be restricted for security.`
           s.id === activeSessionId ? { ...s, lines: [] } : s
         )
       );
+    } else if (e.key === "f" && e.ctrlKey) {
+      e.preventDefault();
+      setShowSearch(true);
+      setShowAiInput(false);
+      setTimeout(() => searchInputRef.current?.focus(), 50);
+    } else if (e.key === "g" && e.ctrlKey) {
+      e.preventDefault();
+      setShowAiInput(true);
+      setShowSearch(false);
+      setTimeout(() => aiInputRef.current?.focus(), 50);
     } else if (e.key === "c" && e.ctrlKey) {
       e.preventDefault();
       if (isExecuting) {
@@ -479,6 +596,34 @@ Note: Some system commands may be restricted for security.`
     }
   };
 
+  const handleSearchKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setShowSearch(false);
+      setSearchQuery("");
+      inputRef.current?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        prevMatch();
+      } else {
+        nextMatch();
+      }
+    }
+  };
+
+  const handleAiKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setShowAiInput(false);
+      setAiQuery("");
+      inputRef.current?.focus();
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      generateAiCommand();
+    }
+  };
+
   const handleTerminalClick = () => {
     inputRef.current?.focus();
   };
@@ -508,8 +653,8 @@ Note: Some system commands may be restricted for security.`
   };
 
   const closeSession = (id: string) => {
-    if (id === "agent-console") return; // Don't allow closing agent console
-    if (sessions.length <= 2) return; // Keep at least agent console + 1 bash
+    if (id === "agent-console") return;
+    if (sessions.length <= 2) return;
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) {
       const remaining = sessions.filter((s) => s.id !== id);
@@ -519,6 +664,7 @@ Note: Some system commands may be restricted for security.`
 
   return (
     <div className="flex flex-col h-full bg-terminal text-foreground font-mono text-sm">
+      {/* Terminal header with tabs and controls */}
       <div className="flex items-center gap-1 px-2 py-1 bg-background/80 border-b border-border">
         <TerminalIcon className="w-4 h-4 text-muted-foreground mr-2" />
         {sessions.map((session) => (
@@ -558,10 +704,44 @@ Note: Some system commands may be restricted for security.`
         >
           <Plus className="w-3 h-3" />
         </Button>
+        
+        {/* Search button */}
         <Button
           size="icon"
           variant="ghost"
-          className="h-6 w-6 ml-auto"
+          className={`h-6 w-6 ml-auto ${showSearch ? 'bg-accent' : ''}`}
+          onClick={() => {
+            setShowSearch(!showSearch);
+            setShowAiInput(false);
+            if (!showSearch) setTimeout(() => searchInputRef.current?.focus(), 50);
+          }}
+          title="Search (Ctrl+F)"
+          data-testid="button-search-terminal"
+        >
+          <Search className="w-3 h-3" />
+        </Button>
+        
+        {/* AI assist button */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className={`h-6 w-6 ${showAiInput ? 'bg-accent' : ''}`}
+          onClick={() => {
+            setShowAiInput(!showAiInput);
+            setShowSearch(false);
+            if (!showAiInput) setTimeout(() => aiInputRef.current?.focus(), 50);
+          }}
+          title="AI Command Generator (Ctrl+G)"
+          data-testid="button-ai-terminal"
+        >
+          <Sparkles className="w-3 h-3" />
+        </Button>
+        
+        {/* Clear button */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6"
           onClick={() =>
             setSessions((prev) =>
               prev.map((s) =>
@@ -575,15 +755,89 @@ Note: Some system commands may be restricted for security.`
         </Button>
       </div>
 
+      {/* Search bar */}
+      {showSearch && (
+        <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 border-b border-border">
+          <Search className="w-4 h-4 text-muted-foreground" />
+          <Input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search in output... (Enter: next, Shift+Enter: prev, Esc: close)"
+            className="h-7 text-xs flex-1"
+            data-testid="input-search-terminal"
+          />
+          {searchMatches.length > 0 && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {currentMatchIndex + 1} / {searchMatches.length}
+            </span>
+          )}
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={prevMatch} disabled={searchMatches.length === 0}>
+            <ChevronUp className="w-3 h-3" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={nextMatch} disabled={searchMatches.length === 0}>
+            <ChevronDown className="w-3 h-3" />
+          </Button>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-6 w-6" 
+            onClick={() => { setShowSearch(false); setSearchQuery(""); inputRef.current?.focus(); }}
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+
+      {/* AI command generator */}
+      {showAiInput && (
+        <div className="flex items-center gap-2 px-2 py-1 bg-muted/50 border-b border-border">
+          <Sparkles className="w-4 h-4 text-primary" />
+          <Input
+            ref={aiInputRef}
+            type="text"
+            value={aiQuery}
+            onChange={(e) => setAiQuery(e.target.value)}
+            onKeyDown={handleAiKeyDown}
+            placeholder="Describe what you want to do... (e.g., 'list all js files')"
+            className="h-7 text-xs flex-1"
+            disabled={isAiLoading}
+            data-testid="input-ai-terminal"
+          />
+          <Button 
+            size="sm" 
+            variant="default" 
+            className="h-7 text-xs"
+            onClick={generateAiCommand}
+            disabled={isAiLoading || !aiQuery.trim()}
+            data-testid="button-generate-command"
+          >
+            {isAiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Generate"}
+          </Button>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            className="h-6 w-6" 
+            onClick={() => { setShowAiInput(false); setAiQuery(""); inputRef.current?.focus(); }}
+          >
+            <X className="w-3 h-3" />
+          </Button>
+        </div>
+      )}
+
+      {/* Terminal output */}
       <div
         ref={scrollRef}
         className="flex-1 overflow-auto p-2 cursor-text"
         onClick={handleTerminalClick}
         data-testid="terminal-output"
       >
-        {activeSession?.lines.map((line) => (
+        {activeSession?.lines.map((line, index) => (
           <div
             key={line.id}
+            ref={(el) => { if (el) lineRefs.current.set(index, el); }}
             className={`whitespace-pre-wrap break-all ${
               line.type === "error"
                 ? "text-destructive"
@@ -602,7 +856,7 @@ Note: Some system commands may be restricted for security.`
                 {line.content}
               </>
             ) : (
-              line.content
+              highlightContent(line.content, index)
             )}
           </div>
         ))}
@@ -626,7 +880,7 @@ Note: Some system commands may be restricted for security.`
               className="flex-1 bg-transparent outline-none caret-success min-w-0"
               autoFocus
               spellCheck={false}
-              placeholder="Type a command..."
+              placeholder={aiSuggestion ? `AI suggested: ${aiSuggestion}` : "Type a command..."}
               data-testid="terminal-input"
             />
           )}

@@ -1,0 +1,1 @@
+print("Menu Simple\n")\nprint("1. Tentang\n")\nprint("2. Keluar\n")\nwhile True:\n    pilihan = input("Pilih menu: ")\n    if pilihan == "1":\n        print("Selamat datang di menu simple!\n")\n    elif pilihan == "2":\n        print("Sampai jumpa!\n")\n        break\n    else:\n        print("Pilihan tidak valid!\n")

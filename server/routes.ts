@@ -337,6 +337,90 @@ export async function registerRoutes(
     }
   });
 
+  // AI command suggestion for terminal
+  app.post("/api/terminal/ai-suggest", async (req, res) => {
+    try {
+      const { query } = req.body;
+      if (!query) {
+        return res.status(400).json({ error: "Query is required" });
+      }
+
+      // Limit query length to prevent abuse
+      if (query.length > 500) {
+        return res.status(400).json({ error: "Query too long", command: null });
+      }
+
+      if (!ai) {
+        return res.status(200).json({ 
+          error: "AI service not available",
+          command: null
+        });
+      }
+
+      const response = await ai.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { 
+            role: "system", 
+            content: `You are a terminal command assistant. Given a natural language description, respond with ONLY the exact shell command to execute. No explanations, no markdown, just the command.
+
+Examples:
+- "list all files" -> ls -la
+- "find all javascript files" -> find . -name "*.js"
+- "show disk usage" -> df -h
+- "create a folder called test" -> mkdir test
+- "install express" -> npm install express
+- "run python script" -> python script.py
+- "check git status" -> git status
+- "search for error in logs" -> grep -r "error" .
+
+Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or commands that could harm the system.`
+          },
+          { role: "user", content: query }
+        ],
+        max_tokens: 100,
+      });
+
+      let command = response.choices[0]?.message?.content?.trim() || "";
+      
+      // Validate and sanitize the generated command
+      const dangerousPatterns = [
+        /rm\s+(-rf?|--recursive|--force)/i,
+        /sudo/i,
+        /chmod\s+777/i,
+        />\s*\/dev\//i,
+        /mkfs/i,
+        /dd\s+if=/i,
+        /:\(\)\s*{\s*:\|:\s*&\s*}\s*;/i, // fork bomb
+        /curl.*\|\s*(ba)?sh/i,
+        /wget.*\|\s*(ba)?sh/i,
+        /eval\s*\(/i,
+      ];
+      
+      for (const pattern of dangerousPatterns) {
+        if (pattern.test(command)) {
+          return res.json({ 
+            error: "Generated command contains potentially unsafe patterns",
+            command: null 
+          });
+        }
+      }
+      
+      // Limit command length
+      if (command.length > 500) {
+        command = command.slice(0, 500);
+      }
+      
+      res.json({ command });
+    } catch (error: any) {
+      console.error("AI suggestion error:", error);
+      res.status(500).json({ 
+        error: "Failed to generate suggestion",
+        command: null
+      });
+    }
+  });
+
   // ============ AI AGENT API ============
 
   // Tool definitions for the AI agent
