@@ -1,65 +1,64 @@
-# DevSpace IDE - Web-Based Development Environment
+# DevSpace IDE - AI Agent Development Environment
 
 ## Overview
 
-DevSpace IDE is a web-based integrated development environment with AI assistance, inspired by Replit and CodeSandbox. It provides a complete coding environment with file management, code editing, terminal access, package management, and AI-powered chat assistance through OpenRouter.
+DevSpace IDE is a web-based AI-powered development environment operating in Level-S Autonomous Mode. The AI Agent executes commands, creates/edits files, and runs shell operations immediately without confirmation.
 
-The application follows a monorepo structure with a React frontend and Express backend, using PostgreSQL for data persistence and real-time terminal command execution.
+## AI Agent Features (Level-S Mode)
 
-## User Preferences
+### Autonomous Execution
+- **No Confirmations**: Agent executes immediately without asking
+- **Auto-Repair**: Automatically fixes errors when possible
+- **Multi-step Tasks**: Chains operations seamlessly
 
-Preferred communication style: Simple, everyday language.
+### Session Persistence
+- Chat history preserved across page refresh
+- Settings retained in localStorage
+- Mode/model selection persisted
+
+### Chat Management
+- **Pin Messages**: Keep important messages visible
+- **Clear Chat**: Save to history and start fresh
+- **Chat History**: Browse and load past conversations
+- **Export**: Download chat logs as JSON
+
+### Tool Capabilities
+- Full bash shell (pipes, redirects, chains)
+- File CRUD (create, read, update, delete, append)
+- Directory operations (mkdir, move, copy)
+- Search files by pattern
+- 60s timeout, 50MB buffer
 
 ## System Architecture
 
-### Frontend Architecture
-- **Framework**: React 18 with TypeScript
-- **Routing**: Wouter (lightweight React router)
-- **State Management**: TanStack React Query for server state
-- **UI Components**: shadcn/ui component library built on Radix UI primitives
-- **Styling**: Tailwind CSS with CSS variables for theming (light/dark mode support)
-- **Build Tool**: Vite with HMR support
+### Frontend (React + TypeScript)
+- **Routing**: Wouter
+- **State**: TanStack React Query + localStorage
+- **UI**: shadcn/ui + Radix UI primitives
+- **Styling**: Tailwind CSS (dark/light mode)
 
-### Backend Architecture
-- **Framework**: Express.js with TypeScript
-- **Runtime**: Node.js with tsx for TypeScript execution
-- **API Pattern**: RESTful endpoints under `/api/*`
-- **File Operations**: Direct filesystem access in workspace directory
-- **Command Execution**: Child process spawning for terminal commands
+### Backend (Express.js)
+- **AI**: Groq API (llama-3.3-70b-versatile)
+- **Shell**: Full bash via child_process
+- **Files**: Direct workspace access
 
 ### IDE Components
-The frontend implements a split-panel IDE layout with resizable sections:
-- **File Tree Sidebar**: Hierarchical file browser with CRUD operations
-- **Code Editor**: Multi-tab editor with syntax highlighting
-- **Terminal Panel**: Real shell access with command history
-- **AI Chat Panel**: OpenRouter-powered AI assistant with model selection
-- **Package Manager**: npm package search, install, and management
+- **File Tree**: CRUD with drag-drop support
+- **Code Editor**: Multi-tab with syntax highlighting
+- **Terminal**: Real shell + Agent Console
+- **AI Chat**: Autonomous agent with tool execution
+- **Package Manager**: npm package management
 
-### Database Layer
-- **ORM**: Drizzle ORM with PostgreSQL dialect
-- **Schema Location**: `shared/schema.ts`
-- **Migrations**: Managed via `drizzle-kit push`
-- **Current Tables**: Users table with UUID primary keys
+## Configuration
 
-### Design System
-The project follows specific design guidelines:
-- Dark slate color palette with purple accents
-- Monospace fonts (JetBrains Mono/Fira Code) for code areas
-- Roboto for UI elements
-- 12px base spacing unit
+### Required Secrets
+- `GROQ_API_KEY`: Groq API for AI
 
-## External Dependencies
+### Optional
+- `OPENROUTER_API_KEY`: Alternative AI provider
+- `DATABASE_URL`: PostgreSQL connection
 
-### AI Integration
-- **OpenRouter API**: AI chat functionality via `OPENROUTER_API_KEY` environment variable
-- **Supported Models**: Claude 3.5 Sonnet, GPT-4 Turbo, Gemini Pro, Llama 3 70B
-
-### Database
-- **PostgreSQL**: Primary database via `DATABASE_URL` environment variable
-- **Session Store**: connect-pg-simple for Express sessions
-
-### Key Libraries
-- **UI**: Radix UI primitives, Lucide icons, react-resizable-panels
-- **Forms**: React Hook Form with Zod validation
-- **Data**: Drizzle ORM, TanStack Query
-- **Utilities**: date-fns, clsx, tailwind-merge
+## User Preferences
+- Communication style: Simple, direct
+- Execution mode: Autonomous (Level-S)
+- Auto terminal switch: Enabled
