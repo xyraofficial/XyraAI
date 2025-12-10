@@ -16,6 +16,9 @@ import {
   HelpCircle,
   ExternalLink,
   Trash2,
+  Key,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import FileTree, { type FileNode } from "./FileTree";
 import CodeEditor, { getLanguageFromExtension } from "./CodeEditor";
@@ -35,6 +38,7 @@ import {
   createFolder,
   deleteFile,
   renameFile,
+  getApiStatus,
   type FileNode as ApiFileNode,
 } from "@/lib/api";
 import {
@@ -62,7 +66,16 @@ export default function IDELayout() {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [aiConfigured, setAiConfigured] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    getApiStatus().then((status) => {
+      setAiConfigured(status.aiConfigured);
+    }).catch(() => {
+      setAiConfigured(false);
+    });
+  }, []);
 
   const loadFileTree = useCallback(async () => {
     try {
@@ -191,7 +204,7 @@ export default function IDELayout() {
     async (parentPath: string | null, name: string) => {
       try {
         const filePath = parentPath ? `${parentPath}/${name}` : name;
-        await writeFile(filePath, "");
+        await writeFile(filePath, "", true);
         await loadFileTree();
         toast({
           title: "File created",
@@ -212,7 +225,7 @@ export default function IDELayout() {
     async (parentPath: string | null, name: string) => {
       try {
         const folderPath = parentPath ? `${parentPath}/${name}` : name;
-        await createFolder(folderPath);
+        await createFolder(folderPath, true);
         await loadFileTree();
         toast({
           title: "Folder created",
@@ -394,6 +407,29 @@ export default function IDELayout() {
                   <RefreshCw className="w-5 h-5" />
                   Refresh Files
                 </Button>
+
+                <div className="border-t border-border my-2" />
+
+                <h4 className="text-sm font-medium text-muted-foreground px-2">AI Configuration</h4>
+                
+                <div className="px-2 py-2 text-sm space-y-2">
+                  <div className="flex items-center gap-2">
+                    {aiConfigured ? (
+                      <>
+                        <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        <span className="text-green-600 dark:text-green-400">AI is configured</span>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle className="w-4 h-4 text-destructive" />
+                        <span className="text-destructive">AI not configured</span>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    To update your API key, go to the Secrets tab in Replit and update GROQ_API_KEY, then restart the application.
+                  </p>
+                </div>
 
                 <div className="border-t border-border my-2" />
                 

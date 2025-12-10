@@ -121,7 +121,7 @@ export async function registerRoutes(
   // Write/Create file
   app.post("/api/files/write", (req, res) => {
     try {
-      const { path: filePath, content } = req.body;
+      const { path: filePath, content, createOnly } = req.body;
       if (!filePath) {
         return res.status(400).json({ error: "Path is required" });
       }
@@ -131,6 +131,11 @@ export async function registerRoutes(
       // Security: ensure path is within workspace
       if (!fullPath.startsWith(WORKSPACE_DIR)) {
         return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Check if file exists when createOnly is true
+      if (createOnly && fs.existsSync(fullPath)) {
+        return res.status(409).json({ error: "File already exists" });
       }
 
       // Ensure directory exists
@@ -149,7 +154,7 @@ export async function registerRoutes(
   // Create folder
   app.post("/api/files/mkdir", (req, res) => {
     try {
-      const { path: folderPath } = req.body;
+      const { path: folderPath, createOnly } = req.body;
       if (!folderPath) {
         return res.status(400).json({ error: "Path is required" });
       }
@@ -160,10 +165,15 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      if (!fs.existsSync(fullPath)) {
-        fs.mkdirSync(fullPath, { recursive: true });
+      if (fs.existsSync(fullPath)) {
+        if (createOnly) {
+          return res.status(409).json({ error: "Folder already exists" });
+        }
+        // If not createOnly, just return success for existing folder
+        return res.json({ success: true, path: folderPath });
       }
 
+      fs.mkdirSync(fullPath, { recursive: true });
       res.json({ success: true, path: folderPath });
     } catch (error: any) {
       res.status(500).json({ error: error.message });

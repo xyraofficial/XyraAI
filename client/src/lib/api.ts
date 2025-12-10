@@ -31,11 +31,11 @@ export async function readFile(filePath: string): Promise<{ content: string; pat
   return res.json();
 }
 
-export async function writeFile(filePath: string, content: string): Promise<void> {
+export async function writeFile(filePath: string, content: string, createOnly?: boolean): Promise<void> {
   const res = await fetch("/api/files/write", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: filePath, content }),
+    body: JSON.stringify({ path: filePath, content, createOnly }),
   });
   if (!res.ok) {
     const error = await res.json();
@@ -43,11 +43,11 @@ export async function writeFile(filePath: string, content: string): Promise<void
   }
 }
 
-export async function createFolder(folderPath: string): Promise<void> {
+export async function createFolder(folderPath: string, createOnly?: boolean): Promise<void> {
   const res = await fetch("/api/files/mkdir", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ path: folderPath }),
+    body: JSON.stringify({ path: folderPath, createOnly }),
   });
   if (!res.ok) {
     const error = await res.json();

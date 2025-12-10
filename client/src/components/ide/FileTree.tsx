@@ -57,6 +57,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from "@/components/ui/dialog";
 
 export interface FileNode {
@@ -371,6 +372,26 @@ export default function FileTree({
       });
       return;
     }
+    
+    const invalidChars = /[<>:"/\\|?*\x00-\x1f]/;
+    if (invalidChars.test(trimmedName)) {
+      toast({
+        title: "Invalid name",
+        description: "Name contains invalid characters",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    if (trimmedName.startsWith('.') && trimmedName.length === 1) {
+      toast({
+        title: "Invalid name",
+        description: "Name cannot be just a dot",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     if (createType === "file") {
       onCreateFile?.(createParentPath, trimmedName);
     } else {
@@ -545,6 +566,9 @@ export default function FileTree({
             <DialogTitle>
               {createType === "file" ? "Create New File" : "Create New Folder"}
             </DialogTitle>
+            <DialogDescription>
+              Enter a name for your new {createType}.
+            </DialogDescription>
           </DialogHeader>
           <div className="py-4">
             <Input
