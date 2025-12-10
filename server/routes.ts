@@ -290,7 +290,7 @@ export async function registerRoutes(
   // Execute command
   app.post("/api/terminal/exec", async (req, res) => {
     try {
-      const { command, cwd } = req.body;
+      const { command, cwd, env: customEnv } = req.body;
       if (!command) {
         return res.status(400).json({ error: "Command is required" });
       }
@@ -309,7 +309,7 @@ export async function registerRoutes(
         });
       }
 
-      // Execute command with timeout - inherit full environment PATH
+      // Execute command with timeout - inherit full environment PATH and merge custom env vars
       const { stdout, stderr } = await execPromise(command, {
         cwd: workDir,
         timeout: 30000, // 30 second timeout
@@ -318,6 +318,7 @@ export async function registerRoutes(
         env: { 
           ...process.env,
           TERM: 'xterm-256color',
+          ...(customEnv || {}),
         },
       });
 

@@ -85,11 +85,15 @@ export interface TerminalResult {
   code?: number;
 }
 
-export async function executeCommand(command: string, cwd?: string): Promise<TerminalResult> {
+export async function executeCommand(
+  command: string, 
+  cwd?: string, 
+  env?: Record<string, string>
+): Promise<TerminalResult> {
   const res = await fetch("/api/terminal/exec", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ command, cwd }),
+    body: JSON.stringify({ command, cwd, env }),
   });
   return res.json();
 }
