@@ -778,23 +778,23 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 min-h-0" ref={scrollRef} viewportRef={viewportRef}>
-        <div className="p-3 space-y-4">
+      <ScrollArea className="flex-1 min-h-0 w-full overflow-hidden" ref={scrollRef} viewportRef={viewportRef}>
+        <div className="p-3 space-y-4 w-full overflow-hidden">
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex gap-3 ${
+              className={`flex gap-2 w-full overflow-hidden ${
                 message.role === "user" ? "justify-end" : "justify-start"
-              } ${message.isPinned ? "bg-yellow-500/5 -mx-3 px-3 py-2 rounded-md" : ""}`}
+              } ${message.isPinned ? "bg-yellow-500/5 py-2 rounded-md" : ""}`}
               data-testid={`message-${message.id}`}
             >
               {message.role === "assistant" && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-primary" />
+                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Bot className="w-3.5 h-3.5 text-primary" />
                 </div>
               )}
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 relative group ${
+                className={`max-w-[calc(100%-3rem)] rounded-lg px-3 py-2 relative group overflow-hidden break-words ${
                   message.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
@@ -813,7 +813,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
                   )}
                 </button>
                 
-                <div className="text-sm">{renderContent(message)}</div>
+                <div className="text-sm break-words overflow-hidden">{renderContent(message)}</div>
                 <div className="flex items-center gap-2 text-xs opacity-60 mt-1">
                   {message.isPinned && <Pin className="w-3 h-3 text-yellow-500" />}
                   <span>
@@ -825,18 +825,18 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
                 </div>
               </div>
               {message.role === "user" && (
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
-                  <User className="w-4 h-4" />
+                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-secondary flex items-center justify-center">
+                  <User className="w-3.5 h-3.5" />
                 </div>
               )}
             </div>
           ))}
           {isLoading && (
-            <div className="flex gap-3 items-start">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center">
-                <Bot className="w-4 h-4 text-primary" />
+            <div className="flex gap-2 items-start w-full overflow-hidden">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center">
+                <Bot className="w-3.5 h-3.5 text-primary" />
               </div>
-              <div className="bg-muted rounded-lg px-3 py-2">
+              <div className="bg-muted rounded-lg px-3 py-2 max-w-[calc(100%-3rem)]">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span className="text-sm text-muted-foreground">Executing...</span>
