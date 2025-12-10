@@ -413,7 +413,7 @@ export default function IDELayout() {
 
                 <h4 className="text-sm font-medium text-muted-foreground px-2">AI Configuration</h4>
                 
-                <div className="px-2 py-2 text-sm space-y-2">
+                <div className="px-2 py-2 text-sm space-y-3">
                   <div className="flex items-center gap-2">
                     {aiConfigured ? (
                       <>
@@ -427,9 +427,40 @@ export default function IDELayout() {
                       </>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    To update your API key, go to the Secrets tab in Replit and update GROQ_API_KEY, then restart the application.
-                  </p>
+                  
+                  <div className="bg-muted/50 rounded-md p-3 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Key className="w-4 h-4" />
+                      <span className="font-medium text-xs">Setup Instructions:</span>
+                    </div>
+                    <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
+                      <li>Get API key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">console.groq.com</a></li>
+                      <li>Click "Secrets" in left panel (lock icon)</li>
+                      <li>Add secret: <code className="bg-background px-1 rounded">GROQ_API_KEY</code></li>
+                      <li>Paste your API key as the value</li>
+                      <li>Restart the application</li>
+                    </ol>
+                  </div>
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start gap-2"
+                    onClick={() => {
+                      getApiStatus().then((status) => {
+                        setAiConfigured(status.aiConfigured);
+                        toast({
+                          title: status.aiConfigured ? "AI is configured" : "AI not configured",
+                          description: status.aiConfigured ? "Your Groq API key is working" : "Please add GROQ_API_KEY in Secrets",
+                          variant: status.aiConfigured ? "default" : "destructive",
+                        });
+                      });
+                    }}
+                    data-testid="button-check-ai-status"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Check AI Status
+                  </Button>
                 </div>
 
                 <div className="border-t border-border my-2" />
