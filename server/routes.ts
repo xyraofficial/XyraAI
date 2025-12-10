@@ -17,9 +17,37 @@ if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
-// Groq API configuration (using environment variable from Replit Secrets)
+// Settings storage for API key configuration
+interface AppSettings {
+  groqApiKey: string;
+}
+
+const SETTINGS_FILE = path.join(process.cwd(), ".devspace-settings.json");
+
+function loadSettings(): AppSettings {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const data = fs.readFileSync(SETTINGS_FILE, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error("Failed to load settings:", e);
+  }
+  return { groqApiKey: process.env.GROQ_API_KEY || "" };
+}
+
+function saveSettings(settings: AppSettings): void {
+  try {
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
+  } catch (e) {
+    console.error("Failed to save settings:", e);
+  }
+}
+
+let appSettings = loadSettings();
+
 function getAIClient(): OpenAI | null {
-  const apiKey = process.env.GROQ_API_KEY || "";
+  const apiKey = appSettings.groqApiKey || process.env.GROQ_API_KEY || "";
   if (!apiKey) return null;
   return new OpenAI({
     apiKey: apiKey,
@@ -28,7 +56,7 @@ function getAIClient(): OpenAI | null {
 }
 
 function isAIConfigured(): boolean {
-  return !!process.env.GROQ_API_KEY;
+  return !!(appSettings.groqApiKey || process.env.GROQ_API_KEY);
 }
 
 interface FileNode {
@@ -857,6 +885,39 @@ Done. Run with: python app.py`;
       aiConfigured: isAIConfigured(),
       workspaceDir: WORKSPACE_DIR,
     });
+  });
+
+  // ============ SETTINGS API ============
+  
+  // Get current settings (masks API key for security)
+  app.get("/api/settings", (req, res) => {
+    const hasKey = !!(appSettings.groqApiKey || process.env.GROQ_API_KEY);
+    const keySource = appSettings.groqApiKey ? "settings" : (process.env.GROQ_API_KEY ? "env" : "none");
+    res.json({
+      hasApiKey: hasKey,
+      keySource: keySource,
+      maskedKey: appSettings.groqApiKey ? `${appSettings.groqApiKey.slice(0, 8)}...${appSettings.groqApiKey.slice(-4)}` : "",
+    });
+  });
+
+  // Update API key
+  app.post("/api/settings", (req, res) => {
+    try {
+      const { groqApiKey } = req.body;
+      
+      if (groqApiKey !== undefined) {
+        appSettings.groqApiKey = groqApiKey;
+        saveSettings(appSettings);
+      }
+      
+      res.json({ 
+        success: true, 
+        aiConfigured: isAIConfigured(),
+        message: groqApiKey ? "API key saved successfully" : "API key cleared"
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // ============ ONLYFANS API ============

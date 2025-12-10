@@ -39,8 +39,11 @@ import {
   deleteFile,
   renameFile,
   getApiStatus,
+  saveApiKey,
+  getSettings,
   type FileNode as ApiFileNode,
 } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -67,15 +70,25 @@ export default function IDELayout() {
   const [isLoading, setIsLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [aiConfigured, setAiConfigured] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [maskedKey, setMaskedKey] = useState("");
+  const [isSavingKey, setIsSavingKey] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
+  const loadAIStatus = useCallback(() => {
     getApiStatus().then((status) => {
       setAiConfigured(status.aiConfigured);
     }).catch(() => {
       setAiConfigured(false);
     });
+    getSettings().then((settings) => {
+      setMaskedKey(settings.maskedKey || "");
+    }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadAIStatus();
+  }, [loadAIStatus]);
 
   const loadFileTree = useCallback(async () => {
     try {
@@ -428,39 +441,94 @@ export default function IDELayout() {
                     )}
                   </div>
                   
-                  <div className="bg-muted/50 rounded-md p-3 space-y-2">
+                  {maskedKey && (
+                    <div className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                      Current key: <code>{maskedKey}</code>
+                    </div>
+                  )}
+                  
+                  <div className="space-y-2">
                     <div className="flex items-center gap-2">
                       <Key className="w-4 h-4" />
-                      <span className="font-medium text-xs">Setup Instructions:</span>
+                      <span className="font-medium text-xs">Groq API Key:</span>
                     </div>
-                    <ol className="text-xs text-muted-foreground space-y-1.5 list-decimal list-inside">
-                      <li>Get API key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" className="text-primary underline">console.groq.com</a></li>
-                      <li>Click "Secrets" in left panel (lock icon)</li>
-                      <li>Add secret: <code className="bg-background px-1 rounded">GROQ_API_KEY</code></li>
-                      <li>Paste your API key as the value</li>
-                      <li>Restart the application</li>
-                    </ol>
+                    <Input
+                      type="password"
+                      placeholder="gsk_xxxxxxxx..."
+                      value={apiKeyInput}
+                      onChange={(e) => setApiKeyInput(e.target.value)}
+                      className="h-8 text-xs"
+                      data-testid="input-api-key"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="flex-1"
+                        disabled={!apiKeyInput || isSavingKey}
+                        onClick={async () => {
+                          setIsSavingKey(true);
+                          try {
+                            const result = await saveApiKey(apiKeyInput);
+                            if (result.success) {
+                              setAiConfigured(result.aiConfigured);
+                              setApiKeyInput("");
+                              loadAIStatus();
+                              toast({
+                                title: "API Key Saved",
+                                description: "Your Groq API key has been saved successfully",
+                              });
+                            }
+                          } catch (error: any) {
+                            toast({
+                              title: "Error",
+                              description: error.message,
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setIsSavingKey(false);
+                          }
+                        }}
+                        data-testid="button-save-api-key"
+                      >
+                        {isSavingKey ? "Saving..." : "Save Key"}
+                      </Button>
+                      {aiConfigured && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            setIsSavingKey(true);
+                            try {
+                              await saveApiKey("");
+                              loadAIStatus();
+                              toast({
+                                title: "API Key Cleared",
+                                description: "Your API key has been removed",
+                              });
+                            } finally {
+                              setIsSavingKey(false);
+                            }
+                          }}
+                          data-testid="button-clear-api-key"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full justify-start gap-2"
-                    onClick={() => {
-                      getApiStatus().then((status) => {
-                        setAiConfigured(status.aiConfigured);
-                        toast({
-                          title: status.aiConfigured ? "AI is configured" : "AI not configured",
-                          description: status.aiConfigured ? "Your Groq API key is working" : "Please add GROQ_API_KEY in Secrets",
-                          variant: status.aiConfigured ? "default" : "destructive",
-                        });
-                      });
-                    }}
-                    data-testid="button-check-ai-status"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    Check AI Status
-                  </Button>
+                  <p className="text-xs text-muted-foreground">
+                    Get your free API key from{" "}
+                    <a 
+                      href="https://console.groq.com/keys" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-primary underline"
+                    >
+                      console.groq.com
+                    </a>
+                  </p>
                 </div>
 
                 <div className="border-t border-border my-2" />

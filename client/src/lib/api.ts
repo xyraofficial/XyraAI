@@ -145,3 +145,30 @@ export async function getApiStatus(): Promise<{ aiConfigured: boolean; workspace
   const res = await fetch("/api/status");
   return res.json();
 }
+
+// Settings API
+export interface SettingsResponse {
+  hasApiKey: boolean;
+  keySource: "settings" | "env" | "none";
+  maskedKey: string;
+}
+
+export interface SaveSettingsResponse {
+  success: boolean;
+  aiConfigured: boolean;
+  message: string;
+}
+
+export async function getSettings(): Promise<SettingsResponse> {
+  const res = await fetch("/api/settings");
+  return res.json();
+}
+
+export async function saveApiKey(groqApiKey: string): Promise<SaveSettingsResponse> {
+  const res = await fetch("/api/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groqApiKey }),
+  });
+  return res.json();
+}
