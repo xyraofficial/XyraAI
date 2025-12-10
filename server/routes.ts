@@ -715,12 +715,24 @@ Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or
     while ((match = toolRegex.exec(content)) !== null) {
       try {
         const toolName = match[1];
-        const argsJson = match[2].trim();
+        let argsJson = match[2].trim();
+        
+        // Try to fix common JSON issues
+        // Replace unescaped newlines in string values
+        argsJson = argsJson.replace(/(?<!\\)\n/g, '\\n');
+        // Replace unescaped tabs
+        argsJson = argsJson.replace(/(?<!\\)\t/g, '\\t');
+        // Replace unescaped carriage returns
+        argsJson = argsJson.replace(/(?<!\\)\r/g, '\\r');
+        
         const args = JSON.parse(argsJson);
         tools.push({ tool: toolName, args });
         text = text.replace(match[0], "");
-      } catch (e) {
-        // Invalid JSON, skip this tool call
+      } catch (e: any) {
+        console.error(`Failed to parse tool call for ${match[1]}:`, e.message);
+        console.error(`Raw JSON: ${match[2].substring(0, 200)}`);
+        // Still remove the failed tool block from text
+        text = text.replace(match[0], "");
       }
     }
     
@@ -739,6 +751,18 @@ Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or
 ## Tool Format
 Use this exact XML format:
 <tool name="TOOL_NAME">{"key": "value"}</tool>
+
+IMPORTANT: Always properly escape special characters in JSON:
+- Use \\n for newlines
+- Use \\t for tabs  
+- Use \\" for quotes inside strings
+- Use \\\\ for backslashes
+
+Example creating a shell script:
+<tool name="create_file">{"path": "run.sh", "content": "#!/bin/bash\\necho \\"Hello World\\"\\nexit 0"}</tool>
+
+Example creating a markdown file:
+<tool name="create_file">{"path": "README.md", "content": "# Title\\n\\nThis is a paragraph.\\n\\n## Section\\n\\n- Item 1\\n- Item 2"}</tool>
 
 ## Available Tools
 
