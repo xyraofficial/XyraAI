@@ -5,6 +5,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { promisify } from "util";
 import OpenAI from "openai";
+import archiver from "archiver";
 
 const execPromise = promisify(exec);
 
@@ -223,6 +224,54 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Download all files as ZIP
+  app.get("/api/files/download-all", (req, res) => {
+    try {
+      if (!fs.existsSync(WORKSPACE_DIR)) {
+        return res.status(404).json({ error: "Workspace directory not found" });
+      }
+
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", "attachment; filename=workspace.zip");
+
+      const archive = archiver("zip", {
+        zlib: { level: 9 },
+      });
+
+      archive.on("error", (err) => {
+        console.error("Archive error:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: err.message });
+        }
+        archive.abort();
+      });
+
+      archive.on("warning", (err) => {
+        console.warn("Archive warning:", err);
+      });
+
+      res.on("close", () => {
+        console.log("Download complete:", archive.pointer() + " bytes");
+      });
+
+      archive.pipe(res);
+
+      // Add workspace directory to archive, excluding .git folder
+      archive.glob("**/*", {
+        cwd: WORKSPACE_DIR,
+        ignore: [".git/**", "node_modules/**"],
+        dot: true,
+      });
+
+      archive.finalize();
+    } catch (error: any) {
+      console.error("Download error:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: error.message });
+      }
     }
   });
 

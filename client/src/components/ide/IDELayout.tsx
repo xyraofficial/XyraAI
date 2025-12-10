@@ -11,6 +11,11 @@ import {
   Sun,
   RefreshCw,
   Menu,
+  Info,
+  Keyboard,
+  HelpCircle,
+  ExternalLink,
+  Trash2,
 } from "lucide-react";
 import FileTree, { type FileNode } from "./FileTree";
 import CodeEditor, { getLanguageFromExtension } from "./CodeEditor";
@@ -353,20 +358,21 @@ export default function IDELayout() {
 
           <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
             <SheetTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-8 w-8">
+              <Button size="icon" variant="ghost" className="h-8 w-8" data-testid="button-menu">
                 <Menu className="w-4 h-4" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[250px] p-4">
-              <div className="flex flex-col gap-4 mt-6">
-                <h3 className="font-semibold text-lg">Settings</h3>
+            <SheetContent side="right" className="w-[280px] p-4">
+              <div className="flex flex-col gap-2 mt-6">
+                <h3 className="font-semibold text-lg mb-2">Settings</h3>
+                
                 <Button
                   variant="ghost"
                   className="justify-start gap-3"
                   onClick={() => {
                     toggleDarkMode();
-                    setMenuOpen(false);
                   }}
+                  data-testid="button-toggle-theme"
                 >
                   {isDarkMode ? (
                     <Sun className="w-5 h-5" />
@@ -375,13 +381,68 @@ export default function IDELayout() {
                   )}
                   {isDarkMode ? "Light Mode" : "Dark Mode"}
                 </Button>
+
                 <Button
                   variant="ghost"
                   className="justify-start gap-3"
-                  onClick={() => setMenuOpen(false)}
+                  onClick={() => {
+                    loadFileTree();
+                    setMenuOpen(false);
+                  }}
+                  data-testid="button-refresh-files-menu"
                 >
-                  <Settings className="w-5 h-5" />
-                  Settings
+                  <RefreshCw className="w-5 h-5" />
+                  Refresh Files
+                </Button>
+
+                <div className="border-t border-border my-2" />
+                
+                <h4 className="text-sm font-medium text-muted-foreground px-2">Keyboard Shortcuts</h4>
+                
+                <div className="px-2 py-1 text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Save file</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Ctrl+S</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Clear terminal</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Ctrl+L</kbd>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Cancel command</span>
+                    <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">Ctrl+C</kbd>
+                  </div>
+                </div>
+
+                <div className="border-t border-border my-2" />
+
+                <Button
+                  variant="ghost"
+                  className="justify-start gap-3"
+                  onClick={() => {
+                    toast({
+                      title: "DevSpace v1.0",
+                      description: "A mobile-first code editor and terminal for developers.",
+                    });
+                    setMenuOpen(false);
+                  }}
+                  data-testid="button-about"
+                >
+                  <Info className="w-5 h-5" />
+                  About DevSpace
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="justify-start gap-3"
+                  onClick={() => {
+                    setActiveTab("ai");
+                    setMenuOpen(false);
+                  }}
+                  data-testid="button-help"
+                >
+                  <HelpCircle className="w-5 h-5" />
+                  Get Help (AI)
                 </Button>
               </div>
             </SheetContent>

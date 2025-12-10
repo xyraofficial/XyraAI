@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Terminal as TerminalIcon, X, Plus, Trash2, Bot } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { executeCommand } from "@/lib/api";
 import { agentConsole, type AgentLog } from "@/lib/agentConsole";
 
 interface TerminalLine {
   id: string;
-  type: "input" | "output" | "error" | "system";
+  type: "input" | "output" | "error" | "system" | "executing";
   content: string;
   timestamp: Date;
 }
@@ -82,6 +82,7 @@ export default function Terminal({
   }, []);
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
+  const [executingCommand, setExecutingCommand] = useState("");
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +98,7 @@ export default function Terminal({
 
   useEffect(() => {
     scrollToBottom();
-  }, [activeSession?.lines, scrollToBottom]);
+  }, [activeSession?.lines, scrollToBottom, isExecuting]);
 
   const addLine = (sessionId: string, type: TerminalLine["type"], content: string) => {
     setSessions((prev) =>
@@ -114,6 +115,36 @@ export default function Terminal({
                   timestamp: new Date(),
                 },
               ],
+            }
+          : session
+      )
+    );
+  };
+
+  const updateExecutingLine = (sessionId: string, content: string) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              lines: session.lines.map((line) =>
+                line.type === "executing"
+                  ? { ...line, content }
+                  : line
+              ),
+            }
+          : session
+      )
+    );
+  };
+
+  const removeExecutingLine = (sessionId: string) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? {
+              ...session,
+              lines: session.lines.filter((line) => line.type !== "executing"),
             }
           : session
       )
@@ -183,8 +214,16 @@ Note: Some commands may be restricted for security.`
 
     // Execute real command
     setIsExecuting(true);
+    setExecutingCommand(trimmedCommand);
+    
+    // Add executing line with animation
+    addLine(activeSessionId, "executing", `Executing: ${trimmedCommand}...`);
+    
     try {
       const result = await executeCommand(trimmedCommand, activeSession?.currentDirectory);
+      
+      // Remove the executing line
+      removeExecutingLine(activeSessionId);
       
       if (result.stdout) {
         addLine(activeSessionId, "output", result.stdout.trim());
@@ -193,7 +232,7 @@ Note: Some commands may be restricted for security.`
         addLine(activeSessionId, result.success ? "output" : "error", result.stderr.trim());
       }
       if (!result.stdout && !result.stderr && result.success) {
-        // Command succeeded but no output (like mkdir, touch, etc.)
+        addLine(activeSessionId, "output", `Command completed successfully.`);
       }
       if (!result.success && !result.stderr) {
         addLine(activeSessionId, "error", `Command failed with exit code: ${result.code}`);
@@ -218,9 +257,11 @@ Note: Some commands may be restricted for security.`
         }
       }
     } catch (error: any) {
+      removeExecutingLine(activeSessionId);
       addLine(activeSessionId, "error", `Error: ${error.message}`);
     } finally {
       setIsExecuting(false);
+      setExecutingCommand("");
     }
   };
 
@@ -254,8 +295,10 @@ Note: Some commands may be restricted for security.`
       );
     } else if (e.key === "c" && e.ctrlKey) {
       if (isExecuting) {
-        addLine(activeSessionId, "system", "^C");
+        removeExecutingLine(activeSessionId);
+        addLine(activeSessionId, "system", "^C - Command interrupted");
         setIsExecuting(false);
+        setExecutingCommand("");
       }
     }
   };
@@ -270,8 +313,15 @@ Note: Some commands may be restricted for security.`
       ...prev,
       {
         id: newId,
-        name: `bash ${prev.length + 1}`,
-        lines: [],
+        name: `bash ${prev.length}`,
+        lines: [
+          {
+            id: "welcome-new",
+            type: "system",
+            content: "New terminal session started.",
+            timestamp: new Date(),
+          },
+        ],
         currentDirectory: initialDirectory,
       },
     ]);
@@ -279,10 +329,12 @@ Note: Some commands may be restricted for security.`
   };
 
   const closeSession = (id: string) => {
-    if (sessions.length === 1) return;
+    if (id === "agent-console") return; // Don't allow closing agent console
+    if (sessions.length <= 2) return; // Keep at least agent console + 1 bash
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) {
-      setActiveSessionId(sessions[0].id === id ? sessions[1].id : sessions[0].id);
+      const remaining = sessions.filter((s) => s.id !== id);
+      setActiveSessionId(remaining[remaining.length - 1]?.id || "agent-console");
     }
   };
 
@@ -302,7 +354,7 @@ Note: Some commands may be restricted for security.`
             data-testid={`terminal-tab-${session.id}`}
           >
             <span className="text-xs">{session.name}</span>
-            {sessions.length > 1 && (
+            {session.id !== "agent-console" && sessions.length > 2 && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -360,29 +412,43 @@ Note: Some commands may be restricted for security.`
                 ? "text-primary"
                 : line.type === "input"
                 ? "text-success"
+                : line.type === "executing"
+                ? "text-yellow-400 flex items-center gap-2"
                 : ""
             }`}
           >
-            {line.content}
+            {line.type === "executing" ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin inline-block mr-2" />
+                {line.content}
+              </>
+            ) : (
+              line.content
+            )}
           </div>
         ))}
-        <div className="flex items-center">
+        
+        {/* Input prompt line */}
+        <div className="flex items-center mt-1">
           <span className="text-success mr-2">$</span>
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="flex-1 bg-transparent outline-none caret-success"
-            autoFocus
-            spellCheck={false}
-            disabled={isExecuting}
-            placeholder={isExecuting ? "Executing..." : ""}
-            data-testid="terminal-input"
-          />
-          {isExecuting && (
-            <span className="text-muted-foreground animate-pulse">Running...</span>
+          {isExecuting ? (
+            <div className="flex items-center gap-2 text-yellow-400">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              <span>Running: {executingCommand}</span>
+            </div>
+          ) : (
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              className="flex-1 bg-transparent outline-none caret-success"
+              autoFocus
+              spellCheck={false}
+              placeholder="Type a command..."
+              data-testid="terminal-input"
+            />
           )}
         </div>
       </div>

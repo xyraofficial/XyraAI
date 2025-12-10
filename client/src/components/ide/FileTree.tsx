@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -11,8 +11,27 @@ import {
   Trash2,
   Edit3,
   FilePlus,
-  FolderPlus
+  FolderPlus,
+  FileCode,
+  FileJson,
+  FileText,
+  Image,
+  FileType,
+  Settings
 } from "lucide-react";
+import { 
+  SiPython, 
+  SiJavascript, 
+  SiTypescript, 
+  SiHtml5, 
+  SiCss3, 
+  SiReact, 
+  SiMarkdown, 
+  SiGit,
+  SiNodedotjs,
+  SiJson,
+  SiYaml
+} from "react-icons/si";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -20,6 +39,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
@@ -29,6 +49,7 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 
 export interface FileNode {
   id: string;
@@ -46,28 +67,94 @@ interface FileTreeProps {
   onCreateFolder?: (parentPath: string | null, name: string) => void;
   onDelete?: (path: string) => void;
   onRename?: (path: string, newName: string) => void;
+  onUpload?: (files: FileList) => void;
+  onDownloadAll?: () => void;
   selectedFileId?: string;
 }
 
-const getFileIcon = (extension?: string) => {
+const getFileIcon = (name: string, extension?: string) => {
   const iconClass = "w-4 h-4 flex-shrink-0";
-  switch (extension) {
-    case "js":
-    case "jsx":
-      return <File className={`${iconClass} text-yellow-400`} />;
-    case "ts":
-    case "tsx":
-      return <File className={`${iconClass} text-blue-400`} />;
-    case "html":
-      return <File className={`${iconClass} text-orange-400`} />;
-    case "css":
-      return <File className={`${iconClass} text-purple-400`} />;
-    case "json":
-      return <File className={`${iconClass} text-green-400`} />;
-    case "md":
-      return <File className={`${iconClass} text-gray-400`} />;
+  
+  // Check for specific files first
+  if (name === "package.json" || name === "package-lock.json") {
+    return <SiNodedotjs className={`${iconClass} text-green-500`} />;
+  }
+  if (name === ".gitignore" || name === ".git") {
+    return <SiGit className={`${iconClass} text-orange-500`} />;
+  }
+  if (name === "tsconfig.json" || name === "jsconfig.json") {
+    return <SiTypescript className={`${iconClass} text-blue-500`} />;
+  }
+  if (name === "vite.config.ts" || name === "vite.config.js") {
+    return <Settings className={`${iconClass} text-purple-500`} />;
+  }
+  if (name === ".env" || name.startsWith(".env.")) {
+    return <Settings className={`${iconClass} text-yellow-500`} />;
+  }
+
+  // Extension-based icons
+  switch (extension?.toLowerCase()) {
     case "py":
-      return <File className={`${iconClass} text-blue-300`} />;
+    case "pyw":
+    case "pyx":
+      return <SiPython className={`${iconClass} text-yellow-400`} />;
+    case "js":
+      return <SiJavascript className={`${iconClass} text-yellow-400`} />;
+    case "jsx":
+      return <SiReact className={`${iconClass} text-cyan-400`} />;
+    case "ts":
+      return <SiTypescript className={`${iconClass} text-blue-500`} />;
+    case "tsx":
+      return <SiReact className={`${iconClass} text-blue-400`} />;
+    case "html":
+    case "htm":
+      return <SiHtml5 className={`${iconClass} text-orange-500`} />;
+    case "css":
+    case "scss":
+    case "sass":
+    case "less":
+      return <SiCss3 className={`${iconClass} text-blue-400`} />;
+    case "json":
+      return <SiJson className={`${iconClass} text-yellow-500`} />;
+    case "md":
+    case "mdx":
+      return <SiMarkdown className={`${iconClass} text-gray-400`} />;
+    case "yaml":
+    case "yml":
+      return <SiYaml className={`${iconClass} text-red-400`} />;
+    case "png":
+    case "jpg":
+    case "jpeg":
+    case "gif":
+    case "svg":
+    case "webp":
+    case "ico":
+      return <Image className={`${iconClass} text-green-400`} />;
+    case "txt":
+      return <FileText className={`${iconClass} text-gray-400`} />;
+    case "sh":
+    case "bash":
+    case "zsh":
+      return <FileCode className={`${iconClass} text-green-400`} />;
+    case "xml":
+      return <FileCode className={`${iconClass} text-orange-400`} />;
+    case "sql":
+      return <FileCode className={`${iconClass} text-blue-300`} />;
+    case "java":
+      return <FileCode className={`${iconClass} text-red-500`} />;
+    case "c":
+    case "cpp":
+    case "h":
+    case "hpp":
+      return <FileCode className={`${iconClass} text-blue-600`} />;
+    case "go":
+      return <FileCode className={`${iconClass} text-cyan-500`} />;
+    case "rs":
+      return <FileCode className={`${iconClass} text-orange-600`} />;
+    case "rb":
+      return <FileCode className={`${iconClass} text-red-400`} />;
+    case "php":
+      return <FileCode className={`${iconClass} text-purple-500`} />;
     default:
       return <File className={`${iconClass} text-muted-foreground`} />;
   }
@@ -112,6 +199,13 @@ function TreeItem({
       onRename?.(node.path, newName.trim());
     }
     setIsRenaming(false);
+    setNewName(node.name);
+  };
+
+  const handleStartRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNewName(node.name);
+    setIsRenaming(true);
   };
 
   const contextMenuItems = (
@@ -136,7 +230,7 @@ function TreeItem({
         </>
       )}
       <ContextMenuItem 
-        onClick={() => setIsRenaming(true)}
+        onClick={handleStartRename}
         data-testid={`context-rename-${node.id}`}
       >
         <Edit3 className="w-4 h-4 mr-2" />
@@ -181,7 +275,7 @@ function TreeItem({
             ) : (
               <>
                 <span className="w-4" />
-                {getFileIcon(node.extension)}
+                {getFileIcon(node.name, node.extension)}
               </>
             )}
             {isRenaming ? (
@@ -191,7 +285,10 @@ function TreeItem({
                 onBlur={handleRename}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleRename();
-                  if (e.key === "Escape") setIsRenaming(false);
+                  if (e.key === "Escape") {
+                    setIsRenaming(false);
+                    setNewName(node.name);
+                  }
                 }}
                 className="h-5 py-0 px-1 text-sm"
                 autoFocus
@@ -233,10 +330,101 @@ export default function FileTree({
   onCreateFolder,
   onDelete,
   onRename,
+  onUpload,
+  onDownloadAll,
   selectedFileId,
 }: FileTreeProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    if (onUpload) {
+      onUpload(files);
+    } else {
+      // Default upload behavior - upload each file
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const reader = new FileReader();
+        reader.onload = async () => {
+          try {
+            const content = reader.result as string;
+            const response = await fetch("/api/files/write", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ path: file.name, content }),
+            });
+            if (response.ok) {
+              toast({
+                title: "File uploaded",
+                description: file.name,
+              });
+              // Refresh will happen through parent component
+              window.location.reload();
+            }
+          } catch (error: any) {
+            toast({
+              title: "Upload failed",
+              description: error.message,
+              variant: "destructive",
+            });
+          }
+        };
+        reader.readAsText(file);
+      }
+    }
+    e.target.value = "";
+  };
+
+  const handleDownloadAll = async () => {
+    if (onDownloadAll) {
+      onDownloadAll();
+    } else {
+      try {
+        const response = await fetch("/api/files/download-all");
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "workspace.zip";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          toast({
+            title: "Download started",
+            description: "Your files are being downloaded as a zip",
+          });
+        } else {
+          throw new Error("Download failed");
+        }
+      } catch (error: any) {
+        toast({
+          title: "Download failed",
+          description: error.message || "Could not download files",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
   return (
     <div className="flex flex-col h-full bg-sidebar">
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={handleFileInputChange}
+        data-testid="file-upload-input"
+      />
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-sidebar-border">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Explorer
@@ -272,11 +460,11 @@ export default function FileTree({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem data-testid="menu-upload">
+              <DropdownMenuItem onClick={handleUploadClick} data-testid="menu-upload">
                 <Upload className="w-4 h-4 mr-2" />
                 Upload Files
               </DropdownMenuItem>
-              <DropdownMenuItem data-testid="menu-download">
+              <DropdownMenuItem onClick={handleDownloadAll} data-testid="menu-download">
                 <Download className="w-4 h-4 mr-2" />
                 Download All
               </DropdownMenuItem>
