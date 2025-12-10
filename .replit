@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-25_05"
-packages = ["git", "curl", "wget", "jq", "ffmpeg", "imagemagick", "zip", "unzip", "htop", "tree", "ripgrep", "python311Packages.pip"]
+packages = ["git", "curl", "wget", "jq", "ffmpeg", "imagemagick", "zip", "unzip", "htop", "tree", "ripgrep", "python311Packages.pip", "nano"]
 
 [deployment]
 deploymentTarget = "autoscale"
