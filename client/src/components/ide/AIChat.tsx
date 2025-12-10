@@ -170,7 +170,9 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Keep refs for cleanup persistence
   const messagesRef = useRef(messages);
@@ -254,14 +256,32 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   }, []);
 
   const scrollToBottom = useCallback(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    // Use messagesEndRef for smooth scrolling to the bottom
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    } else if (viewportRef.current) {
+      // Fallback to viewport scroll
+      viewportRef.current.scrollTop = viewportRef.current.scrollHeight;
     }
   }, []);
 
   useEffect(() => {
-    scrollToBottom();
+    // Small delay to ensure DOM is updated before scrolling
+    const timer = setTimeout(() => {
+      scrollToBottom();
+    }, 50);
+    return () => clearTimeout(timer);
   }, [messages, scrollToBottom]);
+
+  // Also scroll when loading state changes (when AI starts responding)
+  useEffect(() => {
+    if (isLoading) {
+      const timer = setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, scrollToBottom]);
 
   const flattenFileTree = (nodes: FileNode[], prefix = ""): string[] => {
     let result: string[] = [];
@@ -758,7 +778,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef} viewportRef={viewportRef}>
         <div className="p-3 space-y-4">
           {messages.map((message) => (
             <div
@@ -824,6 +844,8 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
               </div>
             </div>
           )}
+          {/* Anchor for auto-scroll to bottom */}
+          <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
 
