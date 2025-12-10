@@ -478,7 +478,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
     if (!settings.showToolResults) return null;
     
     return (
-      <div className="mt-2 space-y-2">
+      <div className="mt-2 space-y-2 w-full overflow-hidden">
         {toolResults.map((result, index) => {
           const Icon = TOOL_ICONS[result.tool] || Terminal;
           const label = TOOL_LABELS[result.tool] || result.tool;
@@ -491,7 +491,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
           return (
             <div
               key={index}
-              className="rounded-md overflow-hidden border border-border"
+              className="rounded-md overflow-hidden border border-border w-full"
               data-testid={`tool-result-${result.tool}-${index}`}
             >
               <div
@@ -511,18 +511,18 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
               </div>
               
               {hasOutput && (
-                <div className="bg-zinc-900 dark:bg-zinc-950 p-2 font-mono text-xs">
+                <div className="bg-zinc-900 dark:bg-zinc-950 p-2 font-mono text-xs overflow-hidden w-full">
                   <div className="flex items-center gap-1 text-zinc-400 mb-1">
-                    <Terminal className="w-3 h-3" />
+                    <Terminal className="w-3 h-3 shrink-0" />
                     <span>Console Output</span>
                   </div>
                   {stdout && (
-                    <pre className="text-green-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                    <pre className="text-green-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto overflow-x-hidden w-full">
                       {stdout}
                     </pre>
                   )}
                   {stderr && (
-                    <pre className="text-red-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+                    <pre className="text-red-400 whitespace-pre-wrap break-all max-h-32 overflow-y-auto overflow-x-hidden w-full">
                       {stderr}
                     </pre>
                   )}
@@ -530,13 +530,13 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
               )}
               
               {!isCommand && result.error && (
-                <div className="bg-red-500/5 px-2 py-1 text-xs text-red-600 dark:text-red-400">
+                <div className="bg-red-500/5 px-2 py-1 text-xs text-red-600 dark:text-red-400 break-words overflow-hidden">
                   {result.error}
                 </div>
               )}
               
               {!isCommand && typeof result.result === "string" && result.result && (
-                <div className="bg-muted/30 px-2 py-1 text-xs text-muted-foreground truncate">
+                <div className="bg-muted/30 px-2 py-1 text-xs text-muted-foreground break-words overflow-hidden">
                   {result.result}
                 </div>
               )}
@@ -577,8 +577,8 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
                     )}
                   </Button>
                 </div>
-                <pre className="p-3 bg-muted/30 text-sm overflow-x-auto">
-                  <code className="font-mono">{code}</code>
+                <pre className="p-3 bg-muted/30 text-sm overflow-x-auto max-w-full">
+                  <code className="font-mono text-xs break-all">{code}</code>
                 </pre>
               </div>
             );
@@ -604,9 +604,9 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   };
 
   return (
-    <div className="flex flex-col h-full bg-card">
+    <div className="flex flex-col h-full w-full bg-card overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-yellow-500" />
           <span className="text-sm font-medium">AI Agent</span>
@@ -850,21 +850,21 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
       </ScrollArea>
 
       {/* Input */}
-      <div className="p-3 border-t border-border">
+      <div className="p-3 border-t border-border shrink-0 w-full overflow-hidden">
         {currentFile && (
-          <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground">
-            <FileCode className="w-3 h-3" />
-            <span>Context: {currentFile.path}</span>
+          <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground overflow-hidden">
+            <FileCode className="w-3 h-3 shrink-0" />
+            <span className="truncate">Context: {currentFile.path}</span>
           </div>
         )}
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full">
           <Textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Tell me what to do..."
-            className="min-h-[40px] max-h-32 resize-none"
+            className="min-h-[40px] max-h-32 resize-none flex-1 min-w-0"
             rows={1}
             data-testid="chat-input"
           />
