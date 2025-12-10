@@ -299,16 +299,15 @@ export async function registerRoutes(
         });
       }
 
-      // Execute command with timeout
+      // Execute command with timeout - inherit full environment PATH
       const { stdout, stderr } = await execPromise(command, {
         cwd: workDir,
         timeout: 30000, // 30 second timeout
         maxBuffer: 1024 * 1024 * 10, // 10MB buffer
         shell: '/bin/bash',
         env: { 
-          ...process.env, 
-          HOME: WORKSPACE_DIR,
-          PATH: process.env.PATH || '/usr/bin:/bin',
+          ...process.env,
+          TERM: 'xterm-256color',
         },
       });
 

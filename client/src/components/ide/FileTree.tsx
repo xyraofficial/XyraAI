@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -17,7 +17,8 @@ import {
   FileText,
   Image,
   FileType,
-  Settings
+  Settings,
+  X
 } from "lucide-react";
 import { 
   SiPython, 
@@ -50,6 +51,13 @@ import {
 } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export interface FileNode {
   id: string;
@@ -166,8 +174,7 @@ interface TreeItemProps {
   onFileSelect: (file: FileNode) => void;
   onDelete?: (path: string) => void;
   onRename?: (path: string, newName: string) => void;
-  onCreateFile?: (parentPath: string, name: string) => void;
-  onCreateFolder?: (parentPath: string, name: string) => void;
+  onOpenCreateDialog?: (type: "file" | "folder", parentPath: string) => void;
   selectedFileId?: string;
 }
 
@@ -177,8 +184,7 @@ function TreeItem({
   onFileSelect, 
   onDelete, 
   onRename,
-  onCreateFile,
-  onCreateFolder,
+  onOpenCreateDialog,
   selectedFileId 
 }: TreeItemProps) {
   const [isExpanded, setIsExpanded] = useState(depth === 0);
@@ -213,14 +219,14 @@ function TreeItem({
       {node.type === "folder" && (
         <>
           <ContextMenuItem 
-            onClick={() => onCreateFile?.(node.path, "untitled.js")}
+            onClick={() => onOpenCreateDialog?.("file", node.path)}
             data-testid={`context-new-file-${node.id}`}
           >
             <FilePlus className="w-4 h-4 mr-2" />
             New File
           </ContextMenuItem>
           <ContextMenuItem 
-            onClick={() => onCreateFolder?.(node.path, "new-folder")}
+            onClick={() => onOpenCreateDialog?.("folder", node.path)}
             data-testid={`context-new-folder-${node.id}`}
           >
             <FolderPlus className="w-4 h-4 mr-2" />
@@ -312,8 +318,7 @@ function TreeItem({
               onFileSelect={onFileSelect}
               onDelete={onDelete}
               onRename={onRename}
-              onCreateFile={onCreateFile}
-              onCreateFolder={onCreateFolder}
+              onOpenCreateDialog={onOpenCreateDialog}
               selectedFileId={selectedFileId}
             />
           ))}
@@ -335,7 +340,45 @@ export default function FileTree({
   selectedFileId,
 }: FileTreeProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+  
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createType, setCreateType] = useState<"file" | "folder">("file");
+  const [createParentPath, setCreateParentPath] = useState<string | null>(null);
+  const [createName, setCreateName] = useState("");
+
+  useEffect(() => {
+    if (createDialogOpen && nameInputRef.current) {
+      setTimeout(() => nameInputRef.current?.focus(), 100);
+    }
+  }, [createDialogOpen]);
+
+  const openCreateDialog = (type: "file" | "folder", parentPath: string | null) => {
+    setCreateType(type);
+    setCreateParentPath(parentPath);
+    setCreateName(type === "file" ? "untitled.txt" : "new-folder");
+    setCreateDialogOpen(true);
+  };
+
+  const handleCreateSubmit = () => {
+    const trimmedName = createName.trim();
+    if (!trimmedName) {
+      toast({
+        title: "Name required",
+        description: "Please enter a name for the " + createType,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (createType === "file") {
+      onCreateFile?.(createParentPath, trimmedName);
+    } else {
+      onCreateFolder?.(createParentPath, trimmedName);
+    }
+    setCreateDialogOpen(false);
+    setCreateName("");
+  };
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
@@ -434,7 +477,7 @@ export default function FileTree({
             size="icon"
             variant="ghost"
             className="h-6 w-6"
-            onClick={() => onCreateFile?.(null, "untitled.js")}
+            onClick={() => openCreateDialog("file", null)}
             data-testid="button-new-file"
           >
             <FilePlus className="w-3.5 h-3.5" />
@@ -443,7 +486,7 @@ export default function FileTree({
             size="icon"
             variant="ghost"
             className="h-6 w-6"
-            onClick={() => onCreateFolder?.(null, "new-folder")}
+            onClick={() => openCreateDialog("folder", null)}
             data-testid="button-new-folder"
           >
             <FolderPlus className="w-3.5 h-3.5" />
@@ -488,14 +531,49 @@ export default function FileTree({
                 onFileSelect={onFileSelect}
                 onDelete={onDelete}
                 onRename={onRename}
-                onCreateFile={onCreateFile}
-                onCreateFolder={onCreateFolder}
+                onOpenCreateDialog={openCreateDialog}
                 selectedFileId={selectedFileId}
               />
             ))
           )}
         </div>
       </ScrollArea>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>
+              {createType === "file" ? "Create New File" : "Create New Folder"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="py-4">
+            <Input
+              ref={nameInputRef}
+              value={createName}
+              onChange={(e) => setCreateName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleCreateSubmit();
+                if (e.key === "Escape") setCreateDialogOpen(false);
+              }}
+              placeholder={createType === "file" ? "filename.txt" : "folder-name"}
+              data-testid="input-create-name"
+            />
+            {createParentPath && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Location: {createParentPath}/
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)} data-testid="button-cancel-create">
+              Cancel
+            </Button>
+            <Button onClick={handleCreateSubmit} data-testid="button-confirm-create">
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
