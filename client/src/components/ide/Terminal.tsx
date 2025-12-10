@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2, Search, Sparkles, ChevronUp, ChevronDown } from "lucide-react";
+import { Terminal as TerminalIcon, X, Plus, Trash2, Loader2, Search, Sparkles, ChevronUp, ChevronDown, StopCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { executeCommand } from "@/lib/api";
@@ -27,10 +27,31 @@ interface TerminalProps {
   initialDirectory?: string;
 }
 
-export default function Terminal({ 
-  initialDirectory = ""
-}: TerminalProps) {
-  const [sessions, setSessions] = useState<TerminalSession[]>([
+const TERMINAL_STORAGE_KEY = "devspace_terminal_sessions";
+const TERMINAL_ACTIVE_KEY = "devspace_terminal_active";
+const TERMINAL_HISTORY_KEY = "devspace_terminal_history";
+
+function getInitialSessions(initialDirectory: string): TerminalSession[] {
+  try {
+    const saved = localStorage.getItem(TERMINAL_STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((session: any) => ({
+          ...session,
+          lines: session.lines.map((line: any) => ({
+            ...line,
+            timestamp: new Date(line.timestamp),
+            type: line.type === "executing" ? "system" : line.type,
+          })),
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn("Failed to restore terminal sessions:", e);
+  }
+  
+  return [
     {
       id: "agent-console",
       name: "Agent Console",
@@ -64,8 +85,50 @@ export default function Terminal({
       aliases: {},
       envVars: {},
     },
-  ]);
-  const [activeSessionId, setActiveSessionId] = useState("agent-console");
+  ];
+}
+
+function getInitialActiveSession(): string {
+  try {
+    const saved = localStorage.getItem(TERMINAL_ACTIVE_KEY);
+    if (saved) return saved;
+  } catch (e) {}
+  return "agent-console";
+}
+
+function getInitialHistory(): string[] {
+  try {
+    const saved = localStorage.getItem(TERMINAL_HISTORY_KEY);
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return [];
+}
+
+export default function Terminal({ 
+  initialDirectory = ""
+}: TerminalProps) {
+  const [sessions, setSessions] = useState<TerminalSession[]>(() => getInitialSessions(initialDirectory));
+  const [activeSessionId, setActiveSessionId] = useState(() => getInitialActiveSession());
+
+  // Save sessions to localStorage whenever they change (but not executing lines)
+  useEffect(() => {
+    try {
+      const sessionsToSave = sessions.map(s => ({
+        ...s,
+        lines: s.lines.filter(l => l.type !== "executing").slice(-500), // Keep last 500 lines per session
+      }));
+      localStorage.setItem(TERMINAL_STORAGE_KEY, JSON.stringify(sessionsToSave));
+    } catch (e) {
+      console.warn("Failed to save terminal sessions:", e);
+    }
+  }, [sessions]);
+
+  // Save active session to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(TERMINAL_ACTIVE_KEY, activeSessionId);
+    } catch (e) {}
+  }, [activeSessionId]);
 
   useEffect(() => {
     const unsubscribe = agentConsole.subscribe((log: AgentLog) => {
@@ -94,8 +157,16 @@ export default function Terminal({
   const [input, setInput] = useState("");
   const [isExecuting, setIsExecuting] = useState(false);
   const [executingCommand, setExecutingCommand] = useState("");
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [commandHistory, setCommandHistory] = useState<string[]>(() => getInitialHistory());
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  
+  // Save command history to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem(TERMINAL_HISTORY_KEY, JSON.stringify(commandHistory.slice(-100)));
+    } catch (e) {}
+  }, [commandHistory]);
   
   // Search feature states
   const [showSearch, setShowSearch] = useState(false);
@@ -264,6 +335,16 @@ export default function Terminal({
     );
   };
 
+  const cancelExecution = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    removeExecutingLine(activeSessionId);
+    addLine(activeSessionId, "system", "^C - Command cancelled");
+    setIsExecuting(false);
+    setExecutingCommand("");
+  };
+
   const processCommand = async (command: string) => {
     const trimmedCommand = command.trim();
     if (!trimmedCommand) return;
@@ -429,7 +510,8 @@ Keyboard Shortcuts:
   Ctrl+G      - AI command generator
   Up/Down     - Navigate history
 
-Note: Some system commands may be restricted for security.`
+Note: Some system commands may be restricted for security.
+Note: Interactive scripts (like Python input()) are not supported.`
       );
       return;
     }
@@ -474,6 +556,9 @@ Note: Some system commands may be restricted for security.`
     
     // Add executing line with animation
     addLine(activeSessionId, "executing", `Executing: ${expandedCommand}...`);
+
+    // Create abort controller for cancellation
+    abortControllerRef.current = new AbortController();
     
     try {
       const result = await executeCommand(expandedCommand, activeSession?.currentDirectory, activeSession?.envVars);
@@ -517,10 +602,15 @@ Note: Some system commands may be restricted for security.`
       }
     } catch (error: any) {
       removeExecutingLine(activeSessionId);
-      addLine(activeSessionId, "error", `Error: ${error.message}`);
+      if (error.name === 'AbortError') {
+        addLine(activeSessionId, "system", "Command was cancelled.");
+      } else {
+        addLine(activeSessionId, "error", `Error: ${error.message}`);
+      }
     } finally {
       setIsExecuting(false);
       setExecutingCommand("");
+      abortControllerRef.current = null;
     }
   };
 
@@ -565,10 +655,7 @@ Note: Some system commands may be restricted for security.`
     } else if (e.key === "c" && e.ctrlKey) {
       e.preventDefault();
       if (isExecuting) {
-        removeExecutingLine(activeSessionId);
-        addLine(activeSessionId, "system", "^C - Command interrupted");
-        setIsExecuting(false);
-        setExecutingCommand("");
+        cancelExecution();
       } else {
         setInput("");
         addLine(activeSessionId, "input", `${activeSession?.currentDirectory || "~"}$ ^C`);
@@ -866,9 +953,19 @@ Note: Some system commands may be restricted for security.`
           <span className="text-primary text-xs">{activeSession?.currentDirectory || "~"}</span>
           <span className="text-success">$</span>
           {isExecuting ? (
-            <div className="flex items-center gap-2 text-yellow-400">
+            <div className="flex items-center gap-2 text-yellow-400 flex-1">
               <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Running: {executingCommand}</span>
+              <span className="flex-1 truncate">Running: {executingCommand}</span>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 text-destructive"
+                onClick={cancelExecution}
+                title="Cancel execution (Ctrl+C)"
+                data-testid="button-cancel-execution"
+              >
+                <StopCircle className="w-4 h-4" />
+              </Button>
             </div>
           ) : (
             <input
