@@ -1,0 +1,273 @@
+{
+  "terminal_cli_spec": {
+    "spec_version": "S-1.0",
+    "name": "Super Complete Terminal Shell CLI (Level S)",
+    "purpose": "Complete specification for a production-grade terminal shell CLI with full POSIX-like features, job control, subshells, variable handling, aliasing, config, security and Replit sandbox considerations.",
+    "features": {
+      "core_execution": {
+        "description": "Execute real shell commands with full stdout/stderr streaming, exit codes, and environment inheritance.",
+        "requirements": {
+          "execution_method": ["subprocess.run", "os.exec*/posix_spawn as fallback"],
+          "streaming": ["stdout_live", "stderr_live"],
+          "exit_code": true,
+          "inherit_environment": true,
+          "working_directory_respected": true,
+          "search_path": true,
+          "executable_resolution": true,
+          "chained_commands": ["&&", "||", ";"],
+          "logical_operators": true
+        }
+      },
+      "interactive_tui_support": {
+        "description": "Run full-screen interactive programs with preserved terminal state.",
+        "requirements": {
+          "execution_method": "pty.spawn or equivalent pty/tty handling",
+          "programs_supported": ["nano", "vim", "vi", "less", "more", "top", "htop", "python", "node", "bash", "sh", "zsh", "man"],
+          "terminal_state_preservation": true,
+          "input_passthrough": true,
+          "signal_passthrough": true,
+          "correct_repainting": true,
+          "return_to_shell_state_on_exit": true
+        }
+      },
+      "directory_navigation": {
+        "requirements": {
+          "cd_variants": ["cd folder", "cd ..", "cd ../..", "cd /absolute/path", "cd ~/folder", "cd", "cd -"],
+          "use_os_chdir": true,
+          "path_validation": true,
+          "tilde_expansion": true,
+          "report_errors_on_invalid_path": true,
+          "prompt_updates": true
+        }
+      },
+      "path_handling": {
+        "requirements": {
+          "relative_and_absolute": true,
+          "expand_env_vars": true,
+          "handle_spaces_and_quotes": true,
+          "symlink_handling": true,
+          "normalize_paths": true,
+          "escape_handling": true
+        }
+      },
+      "parsing_and_shell_syntax": {
+        "requirements": {
+          "tokenization": "POSIX-compatible tokenization",
+          "quoted_strings": ["single", "double"],
+          "escaped_characters": true,
+          "command_substitution": ["$( )", "` `"],
+          "arithmetic_expansion": true,
+          "brace_expansion": true,
+          "tilde_expansion": true,
+          "variable_expansion": true,
+          "field_splitting": true,
+          "globbing": true,
+          "here_documents": true,
+          "here_strings": true,
+          "io_redirection": [">", ">>", "<", "2>", "2>&1", "&>"],
+          "file_descriptor_control": true,
+          "pipelines": true,
+          "subshells": true,
+          "compound_commands": true
+        }
+      },
+      "job_control": {
+        "requirements": {
+          "background_execution": "support &",
+          "job_listing": "jobs builtin",
+          "fg_bg": ["fg", "bg"],
+          "signals_for_jobs": true,
+          "process_groups": true,
+          "terminal_controlling_process_group": true,
+          "notification_on_job_completion": true
+        }
+      },
+      "variables_and_environment": {
+        "requirements": {
+          "assignment": "VAR=value (export optional)",
+          "export_unexport": ["export", "unset"],
+          "read_variables": "echo $VAR, ${VAR}",
+          "readonly_vars": "readonly support",
+          "array_support": "if shell-like, define arrays or document limitation",
+          "env_inheritance_on_exec": true
+        }
+      },
+      "aliases_and_functions": {
+        "requirements": {
+          "alias_declaration": "alias name='command'",
+          "alias_expansion": true,
+          "function_declaration": "name() { ... }",
+          "function_execution": true,
+          "persist_through_config": true
+        }
+      },
+      "config_and_rc_files": {
+        "requirements": {
+          "default_config_files": [".terminalrc", ".termrc", ".bashrc", ".profile"],
+          "auto_load_on_start": true,
+          "support_for_aliases_env_vars_exports": true,
+          "order_of_loading": ["system_defaults", "user_home_files", "cwd_local_files (optional)"],
+          "secure_parsing": true
+        }
+      },
+      "builtin_commands": {
+        "list": ["cd", "exit", "help", "clear", "pwd", "jobs", "fg", "bg", "history", "alias", "unalias", "export", "set", "unset"],
+        "behavior": "Implement internally, do not spawn subprocess except when specified"
+      },
+      "history_and_completion": {
+        "requirements": {
+          "command_history": true,
+          "navigation": ["arrow_up", "arrow_down"],
+          "persistent_storage": ".terminal_history",
+          "timestamped_entries": "optional",
+          "reverse_search": "Ctrl+R optional",
+          "autocomplete": {
+            "commands": true,
+            "files_and_dirs": true,
+            "variables": true,
+            "tab_completion": true,
+            "smart_completion": "optional"
+          }
+        }
+      },
+      "signals_and_signal_handling": {
+        "requirements": {
+          "ctrl_c": "interrupt_current_foreground_process",
+          "ctrl_z": "suspend_foreground_process (job control)",
+          "ctrl_d": "EOF -> exit shell if input stream closed and empty command",
+          "SIGWINCH": "handle terminal resize and notify TUI",
+          "proper_forwarding_of_signals_to_child_processes": true
+        }
+      },
+      "security_and_sandboxing": {
+        "requirements": {
+          "replit_sandbox_considerations": true,
+          "resource_limits": {
+            "cpu_time_limit": "configurable",
+            "memory_limit": "configurable",
+            "process_count_limit": "configurable"
+          },
+          "avoid_untrusted_config_execution": true,
+          "safe_path_handling": true,
+          "permission_errors_handled": true,
+          "input_sanitization_for_agent_commands": true
+        }
+      },
+      "io_and_terminal_modes": {
+        "requirements": {
+          "tty_mode_switching": ["raw", "cooked", "restore_on_exit"],
+          "termios_configuration": true,
+          "echo_control": true,
+          "line_buffering_handling": true,
+          "unicode_utf8_handling": true,
+          "termcap_terminfo_awareness": true
+        }
+      },
+      "logging_monitoring_and_telemetry": {
+        "requirements": {
+          "command_execution_log": true,
+          "error_log": true,
+          "optional_verbose_mode": true,
+          "rotate_logs": "optional",
+          "exposure_of_logs_to_agent_for_debugging": true
+        }
+      },
+      "testing_and_acceptance": {
+        "requirements": {
+          "automated_tests": [
+            "execute_simple_command_ls",
+            "execute_chained_commands",
+            "run_interactive_nano_and_edit_and_exit",
+            "run_background_job_and_verify_jobs_list",
+            "cd_and_run_command_in_new_dir",
+            "io_redirection_tests",
+            "pipeline_tests",
+            "signal_interrupt_test",
+            "subshell_and_command_substitution_test",
+            "variable_assignment_and_expansion_test",
+            "alias_creation_and_usage_test"
+          ],
+          "integration_tests": true,
+          "regression_tests_on_updates": true,
+          "test_results_reporting": true
+        }
+      },
+      "usability": {
+        "requirements": {
+          "prompt_formatting": "{user_info}{cwd} $ ",
+          "prompt_customization_via_config": true,
+          "color_support": true,
+          "help_text_for_builtins": true,
+          "clear_screen_behavior": true
+        }
+      },
+      "extensibility": {
+        "requirements": {
+          "plugin_or_hook_support": "pre_command, post_command, on_start, on_exit",
+          "api_for_extensions": "expose limited API for extensions/hook scripts",
+          "safe_execution_context_for_plugins": true
+        }
+      },
+      "performance": {
+        "requirements": {
+          "low_startup_latency": true,
+          "non-blocking_io_where_possible": true,
+          "efficient_history_io": true,
+          "memory_usage_bounds": "reasonable for Replit constraints"
+        }
+      }
+    },
+    "replit_agent_integration": {
+      "instructions_for_agent": {
+        "environment_requirements": {
+          "python_version": ">=3.10",
+          "deps": ["ptyprocess (optional)", "readline or prompt_toolkit optional", "shlex", "termios", "psutil optional for process management"],
+          "permissions": "allow spawning subprocesses and pty when Replit runtime permits"
+        },
+        "deployment_plan": [
+          "create project scaffold with terminal.py entrypoint",
+          "add config loader supporting .terminalrc",
+          "implement core loop with parsing->dispatch->exec",
+          "implement pty-backed interactive spawn",
+          "add job control and signal handling",
+          "add history and completion",
+          "add tests and CI workflow",
+          "perform sandbox tests within Replit environment"
+        ],
+        "safety_checks": [
+          "validate config before execution",
+          "limit resource consumption",
+          "do not automatically run arbitrary startup scripts without explicit allow flag"
+        ],
+        "output_expectation": "Agent must return artifacts: terminal.py, config templates, tests, README with run instructions"
+      }
+    },
+    "acceptance_criteria": {
+      "functional": [
+        "Execute arbitrary real shell commands and show identical outputs (stdout/stderr, exit codes)",
+        "Run TUI programs and return to shell after normal exit",
+        "Support cd, path handling, quoting, redirection, pipelines, and command substitution",
+        "Support background jobs and job control (jobs, fg, bg)",
+        "Support variable assignment, export, alias, and functions from config",
+        "Do not crash on invalid commands or runtime errors"
+      ],
+      "non_functional": [
+        "Stable under repeated interactive use",
+        "Reasonable performance on Replit limits",
+        "Secure by default with sandbox-aware behavior",
+        "Well-tested with automated test suite"
+      ],
+      "deliverables": [
+        "terminal.py (entrypoint)",
+        "config templates (.terminalrc, .terminal_history example)",
+        "test suite (unit + integration)",
+        "README with usage and Replit Agent run commands",
+        "optional prompt customization and completion scripts"
+      ]
+    },
+    "notes": {
+      "verbosity": "This JSON is intended as a machine/agent-consumable full specification (Level S). Implementers may document design decisions separately.",
+      "versioning": "spec_version S-1.0; future revisions can add more shell builtins or POSIX subtleties."
+    }
+  }
+}
