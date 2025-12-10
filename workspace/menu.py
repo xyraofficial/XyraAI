@@ -4,7 +4,7 @@ import time
 while True:
     os.system('clear')
     print('#' * 50)
-    print('ANIMASI SEDERHANA')
+    print('LOADING SEDERHANA')
     print('#' * 50)
     for i in range(10):
         os.system('clear')

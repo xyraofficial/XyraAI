@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { 
   Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2, FileCode, Terminal, 
   FolderOpen, Pencil, Trash, CheckCircle, XCircle, Pin, PinOff, History, 
-  Download, RotateCcw, Settings2, ChevronDown, Zap
+  Download, RotateCcw, Settings2, ChevronDown, Zap, MessageCircle, Code2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -24,7 +24,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { sendChatMessage, getApiStatus, getFileTree, readFile, type ToolCall, type ToolResult, type FileNode } from "@/lib/api";
+import { sendChatMessage, getApiStatus, getFileTree, readFile, type ToolCall, type ToolResult, type FileNode, type ChatMode } from "@/lib/api";
 import { agentConsole } from "@/lib/agentConsole";
 
 interface Message {
@@ -100,7 +100,7 @@ const DEFAULT_SETTINGS: AgentSettings = {
   persistSession: true,
 };
 
-const WELCOME_MESSAGE: Message = {
+const WELCOME_MESSAGE_AGENT: Message = {
   id: "welcome",
   role: "assistant",
   content: `**DevSpace AI Agent** - Level-S Autonomous Mode
@@ -112,6 +112,22 @@ I'm your intelligent coding assistant with full capabilities:
 - Full project understanding
 
 Just tell me what you need - I'll execute immediately.`,
+  timestamp: new Date(),
+};
+
+const WELCOME_MESSAGE_CHAT: Message = {
+  id: "welcome",
+  role: "assistant",
+  content: `**Hi! I'm your AI Assistant**
+
+I can help you with anything you need:
+- Answer questions on any topic
+- Explain concepts and ideas
+- Help with writing and editing
+- Have a conversation
+- And much more!
+
+Feel free to ask me anything!`,
   timestamp: new Date(),
 };
 
@@ -138,7 +154,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
         }));
       }
     } catch {}
-    return [WELCOME_MESSAGE];
+    return [WELCOME_MESSAGE_CHAT];
   };
 
   // Load chat history
@@ -169,6 +185,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   const [apiConnected, setApiConnected] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>("chat"); // Default to general chat mode
   const scrollRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -320,7 +337,8 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   };
 
   const loadFromHistory = (session: ChatSession) => {
-    setMessages([WELCOME_MESSAGE, ...session.messages]);
+    const welcomeMsg = chatMode === "agent" ? WELCOME_MESSAGE_AGENT : WELCOME_MESSAGE_CHAT;
+    setMessages([welcomeMsg, ...session.messages]);
     setSelectedModel(session.model);
     setShowHistory(false);
   };
@@ -344,6 +362,20 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
       },
       ...pinnedMessages,
     ]);
+  };
+
+  const handleModeChange = (newMode: ChatMode) => {
+    if (newMode !== chatMode) {
+      setChatMode(newMode);
+      const welcomeMsg = newMode === "agent" ? WELCOME_MESSAGE_AGENT : WELCOME_MESSAGE_CHAT;
+      setMessages([
+        {
+          ...welcomeMsg,
+          id: `welcome-${Date.now()}`,
+          timestamp: new Date(),
+        },
+      ]);
+    }
   };
 
   const exportChat = () => {
@@ -395,7 +427,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
         },
       };
 
-      const response = await sendChatMessage(trimmedInput, selectedModel, context);
+      const response = await sendChatMessage(trimmedInput, selectedModel, context, chatMode);
 
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
@@ -606,12 +638,33 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
   return (
     <div className="flex flex-col h-full w-full bg-card overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
-          <Zap className="w-4 h-4 text-yellow-500" />
-          <span className="text-sm font-medium">AI Agent</span>
-          <Badge variant={apiConnected ? "default" : "destructive"} className="text-xs">
-            {apiConnected ? "Level-S" : "Offline"}
+      <div className="flex items-center justify-between gap-2 px-2 py-2 border-b border-border shrink-0">
+        <div className="flex items-center gap-1">
+          {/* Mode Toggle */}
+          <div className="flex items-center bg-muted rounded-md p-0.5">
+            <Button
+              size="sm"
+              variant={chatMode === "chat" ? "default" : "ghost"}
+              className="h-6 px-2 text-xs"
+              onClick={() => handleModeChange("chat")}
+              data-testid="button-mode-chat"
+            >
+              <MessageCircle className="w-3 h-3 mr-1" />
+              Chat
+            </Button>
+            <Button
+              size="sm"
+              variant={chatMode === "agent" ? "default" : "ghost"}
+              className="h-6 px-2 text-xs"
+              onClick={() => handleModeChange("agent")}
+              data-testid="button-mode-agent"
+            >
+              <Code2 className="w-3 h-3 mr-1" />
+              Agent
+            </Button>
+          </div>
+          <Badge variant={apiConnected ? "default" : "destructive"} className="text-xs ml-1">
+            {apiConnected ? (chatMode === "agent" ? "Level-S" : "Online") : "Offline"}
           </Badge>
         </div>
         <div className="flex items-center gap-1">
@@ -881,7 +934,7 @@ export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }
           </Button>
         </div>
         <div className="text-xs text-muted-foreground mt-2 text-center">
-          Level-S Mode: No confirmation needed
+          {chatMode === "agent" ? "Agent Mode: Execute code & commands" : "Chat Mode: Ask anything"}
         </div>
       </div>
     </div>

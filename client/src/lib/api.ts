@@ -127,11 +127,18 @@ export interface ChatResponse {
   error?: string;
 }
 
-export async function sendChatMessage(message: string, model?: string, context?: ChatContext): Promise<ChatResponse> {
+export type ChatMode = "agent" | "chat";
+
+export async function sendChatMessage(
+  message: string, 
+  model?: string, 
+  context?: ChatContext,
+  mode: ChatMode = "agent"
+): Promise<ChatResponse> {
   const res = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, model, context }),
+    body: JSON.stringify({ message, model, context, mode }),
   });
   const data = await res.json();
   if (data.error && !data.response) {

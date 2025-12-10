@@ -52,16 +52,35 @@ function saveSettings(settings: AppSettings): void {
 let appSettings = loadSettings();
 
 function getAIClient(): OpenAI | null {
-  const apiKey = appSettings.groqApiKey || process.env.GROQ_API_KEY || "";
-  if (!apiKey) return null;
-  return new OpenAI({
-    apiKey: apiKey,
-    baseURL: "https://api.groq.com/openai/v1",
-  });
+  // Try Groq first, then OpenRouter
+  const groqKey = appSettings.groqApiKey || process.env.GROQ_API_KEY || "";
+  if (groqKey) {
+    return new OpenAI({
+      apiKey: groqKey,
+      baseURL: "https://api.groq.com/openai/v1",
+    });
+  }
+  
+  // Fallback to OpenRouter
+  const openRouterKey = process.env.OPENROUTER_API_KEY || "";
+  if (openRouterKey) {
+    return new OpenAI({
+      apiKey: openRouterKey,
+      baseURL: "https://openrouter.ai/api/v1",
+    });
+  }
+  
+  return null;
+}
+
+function getAIProvider(): "groq" | "openrouter" | null {
+  if (appSettings.groqApiKey || process.env.GROQ_API_KEY) return "groq";
+  if (process.env.OPENROUTER_API_KEY) return "openrouter";
+  return null;
 }
 
 function isAIConfigured(): boolean {
-  return !!(appSettings.groqApiKey || process.env.GROQ_API_KEY);
+  return !!(appSettings.groqApiKey || process.env.GROQ_API_KEY || process.env.OPENROUTER_API_KEY);
 }
 
 interface FileNode {
@@ -791,22 +810,70 @@ Creating Flask API.
 
 Done. Run with: python app.py`;
 
+  // General chat system prompt for conversational AI
+  const GENERAL_CHAT_PROMPT = `You are a helpful, friendly AI assistant. You can answer questions on any topic, have conversations, help with information, give advice, and assist with various tasks.
+
+Key behaviors:
+- Be helpful, accurate, and conversational
+- Provide clear and informative responses
+- If you don't know something, say so honestly
+- Be friendly but professional
+- Support multiple languages - respond in the same language the user uses
+- For coding questions, provide helpful explanations and examples
+
+You can help with:
+- General knowledge and information
+- Explanations of concepts
+- Writing and editing text
+- Math and calculations
+- Advice and recommendations
+- Creative tasks
+- And much more!`;
+
   app.post("/api/chat", async (req, res) => {
     try {
-      const { message, context } = req.body;
+      const { message, context, mode = "agent" } = req.body;
       
       if (!message) {
         return res.status(400).json({ error: "Message is required" });
       }
 
       const ai = getAIClient();
+      const provider = getAIProvider();
+      
       if (!ai) {
         return res.status(500).json({ 
-          error: "Groq API key not configured",
-          response: "I'm sorry, but the AI service is not configured yet. Please add your Groq API key in the Secrets tab to use the AI assistant."
+          error: "AI not configured",
+          response: "AI service is not configured. Please add your Groq API key or OpenRouter API key in the Secrets tab."
         });
       }
 
+      // Determine model based on provider
+      const model = provider === "groq" 
+        ? "llama-3.3-70b-versatile" 
+        : "meta-llama/llama-3.3-70b-instruct";
+
+      // General Chat Mode - simple conversational AI
+      if (mode === "chat") {
+        const response = await ai.chat.completions.create({
+          model: model,
+          messages: [
+            { role: "system", content: GENERAL_CHAT_PROMPT },
+            { role: "user", content: message }
+          ],
+          max_tokens: 2000,
+        });
+
+        const aiContent = response.choices[0]?.message?.content || "No response generated";
+        
+        return res.json({ 
+          response: aiContent,
+          toolCalls: [],
+          toolResults: [],
+        });
+      }
+
+      // Agent Mode - coding assistant with tool execution
       // Build context string
       let contextInfo = "";
       if (context?.currentFile) {
@@ -818,9 +885,8 @@ Done. Run with: python app.py`;
 
       const userMessage = message + contextInfo;
 
-      // Use Groq API (OpenAI-compatible)
       const response = await ai.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
+        model: model,
         messages: [
           { role: "system", content: AGENT_SYSTEM_PROMPT },
           { role: "user", content: userMessage }
@@ -853,7 +919,7 @@ Done. Run with: python app.py`;
 
         try {
           const followUp = await ai.chat.completions.create({
-            model: "llama-3.3-70b-versatile",
+            model: model,
             messages: [
               { role: "system", content: "You are a helpful coding assistant. Briefly summarize what happened and provide helpful next steps if needed. Be concise (1-2 sentences). If there was an error, explain what went wrong." },
               { role: "user", content: `Tool execution results:\n${toolSummary}\n\nProvide a brief summary for the user.` }
