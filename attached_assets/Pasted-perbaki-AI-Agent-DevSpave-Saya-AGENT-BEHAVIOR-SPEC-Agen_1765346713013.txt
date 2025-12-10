@@ -1,0 +1,148 @@
+perbaki AI Agent DevSpave Saya,
+AGENT BEHAVIOR SPEC, Agent + Terminal + File System + Execution Engine + Process Manager,
+
+Bisa menjalankan shell asli
+
+Bisa menjalankan file apa pun
+
+Bisa membaca & menulis file
+
+Bisa memodifikasi project
+
+Bisa menjalankan interactive (nano, vim, python, node)
+
+Bisa menangkap output
+
+Bisa memberi saran perintah
+
+Bisa membantu coding otomatis
+
+Bisa menjalankan pipeline
+
+Bisa membaca error dan memperbaikinya
+
+Bisa bekerja sebagai developer assistant
+
+✔ AI Agent Behavior
+
+✔ Terminal PTY
+
+✔ File System Full Access
+
+✔ Execution Engine Full
+
+✔ Code Editor Capabilities
+
+✔ Auto Repair + Debugging
+
+✔ Multi-language backend
+
+✔ Error understanding
+
+✔ Job control, TUI, background tasks
+
+Agent (2025) — Full Capability Spec.
+
+
+{
+  "ai_agent_spec": {
+    "goal": "Provide a full-featured development assistant and terminal execution environment identical to Replit Agent.",
+    "capabilities": {
+      "shell": {
+        "supports_real_shell": true,
+        "pty_mode": true,
+        "commands": [
+          "ls", "cd", "rm", "mkdir", "cat", "touch", "cp", "mv",
+          "bash", "sh", "python", "node",
+          "git", "npm", "pip", "curl", "wget",
+          "chmod", "grep", "sed", "awk", "tar", "zip", "unzip",
+          "systemctl", "service"
+        ],
+        "features": {
+          "pipes": true,
+          "redirects": true,
+          "subshells": true,
+          "background_processes": true,
+          "job_control": true,
+          "environment_variables": true,
+          "script_execution": true,
+          "signal_handling": true
+        }
+      },
+      "interactive_programs": {
+        "full_tui_support": true,
+        "programs": [
+          "nano", "vim", "vi",
+          "htop", "top",
+          "python", "node", "lua", "php",
+          "less", "more"
+        ],
+        "pty_handling": {
+          "keyboard_input": true,
+          "screen_refresh": true,
+          "exit_and_return_to_agent": true
+        }
+      },
+      "file_system": {
+        "read": true,
+        "write": true,
+        "delete": true,
+        "append": true,
+        "list_folders": true,
+        "binary_files": true,
+        "json_yaml_toml_handling": true,
+        "project_wide_search": true,
+        "auto_fix_file_structure": true
+      },
+      "coding_assistant": {
+        "generate_code": true,
+        "edit_existing_files": true,
+        "create_new_files": true,
+        "refactor": true,
+        "debugger_simulation": true,
+        "explain_errors": true,
+        "suggest_improvements": true,
+        "language_support": [
+          "python", "javascript", "nodejs", "bash",
+          "c", "cpp", "java", "rust", "go",
+          "php", "dart", "lua", "kotlin"
+        ]
+      },
+      "execution_engine": {
+        "run_code": true,
+        "compile_programs": true,
+        "server_mode": true,
+        "background_services": true,
+        "framework_support": [
+          "flask", "fastapi", "express", "nextjs"
+        ]
+      },
+      "ai_behavior": {
+        "context_awareness": true,
+        "project_understanding": true,
+        "auto_repair_errors": true,
+        "give_actionable_commands": true,
+        "modify_files_when_needed": true,
+        "never_crash": true,
+        "explain_before_doing": false,
+        "ask_for_clarification_only_if_critical": true
+      },
+      "security": {
+        "sandbox_enforced": true,
+        "prevent_os_escape": true,
+        "no_remote_network_without_permission": true
+      }
+    },
+    "event_loops": {
+      "terminal_loop": true,
+      "agent_chat_loop": true,
+      "autonomous_actions": true,
+      "observing_terminal_output": true
+    },
+    "compatibility": {
+      "replit_feature_parity": "100%",
+      "supports_agent_tool_override": true,
+      "supports_ai_edit_instructions": true
+    }
+  }
+}

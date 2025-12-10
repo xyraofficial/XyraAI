@@ -297,16 +297,24 @@ export async function registerRoutes(
 
       const workDir = cwd ? path.join(WORKSPACE_DIR, cwd) : WORKSPACE_DIR;
       
-      // Block apt/brew/yum commands with helpful message
-      const blockedCommands = ['apt', 'apt-get', 'brew', 'yum', 'dnf', 'pacman', 'apk'];
-      const firstWord = command.trim().split(/\s+/)[0];
-      if (blockedCommands.includes(firstWord)) {
-        return res.json({
-          success: false,
-          stdout: "",
-          stderr: `Tools like apt, brew, and yum are not available in this environment.\nUse pip for Python packages: pip install <package>\nOr ask the developer to add system dependencies.`,
-          code: 1,
-        });
+      // Block only truly dangerous system-level commands
+      const blockedPatterns = [
+        /^(apt|apt-get|brew|yum|dnf|pacman|apk)\s/,
+        /rm\s+(-rf|--recursive.*--force)\s+[\/~]/i,
+        /sudo\s+rm/i,
+        /mkfs/i,
+        /dd\s+if=.*of=\/dev/i,
+      ];
+      
+      for (const pattern of blockedPatterns) {
+        if (pattern.test(command)) {
+          return res.json({
+            success: false,
+            stdout: "",
+            stderr: `This command is not available in this environment.\nUse pip for Python packages or npm for Node.js packages.`,
+            code: 1,
+          });
+        }
       }
 
       // Execute command with timeout - inherit full environment PATH and merge custom env vars
@@ -494,35 +502,45 @@ Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or
         }
         
         case "run_command": {
-          const { command } = tool.args;
+          const { command, cwd } = tool.args;
           
-          // Validate command - only allow safe development commands
-          const allowedCommands = ['node', 'npm', 'npx', 'python', 'python3', 'pip', 'pip3', 'ls', 'cat', 'echo', 'pwd', 'mkdir', 'touch', 'head', 'tail', 'grep', 'find', 'git'];
-          const firstWord = command.trim().split(/\s+/)[0];
+          // Block only truly dangerous commands
+          const blockedPatterns = [
+            /rm\s+(-rf|--recursive.*--force|--force.*--recursive)\s+[\/~]/i,
+            /sudo\s+rm/i,
+            /mkfs/i,
+            /dd\s+if=.*of=\/dev/i,
+            /:\(\)\s*{\s*:\|:\s*&\s*}\s*;/i, // fork bomb
+            />\s*\/dev\/(sda|hda|null)/i,
+          ];
           
-          // Block dangerous commands
-          const blockedPatterns = ['rm -rf', 'sudo', 'chmod', 'chown', 'curl', 'wget', 'ssh', 'scp', '>', '>>', '|', '&&', ';', '`', '$(' ];
           for (const pattern of blockedPatterns) {
-            if (command.includes(pattern)) {
-              return { tool: tool.tool, success: false, error: `Command contains blocked pattern: ${pattern}` };
+            if (pattern.test(command)) {
+              return { tool: tool.tool, success: false, error: `Command blocked for safety` };
             }
           }
           
-          if (!allowedCommands.includes(firstWord)) {
-            return { tool: tool.tool, success: false, error: `Command '${firstWord}' is not allowed. Allowed: ${allowedCommands.join(', ')}` };
-          }
-          
           try {
+            const workDir = cwd ? path.join(WORKSPACE_DIR, cwd) : WORKSPACE_DIR;
             const { stdout, stderr } = await execPromise(command, {
-              cwd: WORKSPACE_DIR,
-              timeout: 30000,
-              maxBuffer: 1024 * 1024 * 10,
+              cwd: workDir,
+              timeout: 60000, // 60 second timeout
+              maxBuffer: 1024 * 1024 * 50, // 50MB buffer
               shell: '/bin/bash',
-              env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: WORKSPACE_DIR },
+              env: { 
+                ...process.env,
+                TERM: 'xterm-256color',
+                HOME: process.env.HOME || '/home/runner',
+              },
             });
-            return { tool: tool.tool, success: true, result: { stdout: stdout?.slice(0, 5000), stderr: stderr?.slice(0, 1000) } };
+            return { tool: tool.tool, success: true, result: { stdout: stdout?.slice(0, 10000), stderr: stderr?.slice(0, 5000) } };
           } catch (error: any) {
-            return { tool: tool.tool, success: false, error: error.message?.slice(0, 500), result: { stdout: error.stdout?.slice(0, 2000), stderr: error.stderr?.slice(0, 1000) } };
+            return { 
+              tool: tool.tool, 
+              success: false, 
+              error: error.message?.slice(0, 1000), 
+              result: { stdout: error.stdout?.slice(0, 5000), stderr: error.stderr?.slice(0, 3000) } 
+            };
           }
         }
         
@@ -539,6 +557,82 @@ Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or
             return result;
           };
           return { tool: tool.tool, success: true, result: flattenTree(tree).join("\n") };
+        }
+        
+        case "append_file": {
+          const { path: filePath, content } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, filePath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fullPath)) {
+            // Create file if it doesn't exist
+            const dir = path.dirname(fullPath);
+            if (!fs.existsSync(dir)) {
+              fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(fullPath, content || "", "utf-8");
+          } else {
+            fs.appendFileSync(fullPath, content || "", "utf-8");
+          }
+          return { tool: tool.tool, success: true, result: `Appended to: ${filePath}` };
+        }
+        
+        case "search_files": {
+          const { pattern, fileType } = tool.args;
+          try {
+            const grepCommand = fileType 
+              ? `grep -rn "${pattern}" --include="${fileType}" . 2>/dev/null | head -50`
+              : `grep -rn "${pattern}" . 2>/dev/null | head -50`;
+            
+            const { stdout } = await execPromise(grepCommand, {
+              cwd: WORKSPACE_DIR,
+              timeout: 10000,
+              maxBuffer: 1024 * 1024,
+              shell: '/bin/bash',
+            });
+            return { tool: tool.tool, success: true, result: stdout || "No matches found" };
+          } catch (error: any) {
+            return { tool: tool.tool, success: true, result: error.stdout || "No matches found" };
+          }
+        }
+        
+        case "mkdir": {
+          const { path: dirPath } = tool.args;
+          const fullPath = path.join(WORKSPACE_DIR, dirPath);
+          if (!fullPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          fs.mkdirSync(fullPath, { recursive: true });
+          return { tool: tool.tool, success: true, result: `Directory created: ${dirPath}` };
+        }
+        
+        case "move_file": {
+          const { from, to } = tool.args;
+          const fromPath = path.join(WORKSPACE_DIR, from);
+          const toPath = path.join(WORKSPACE_DIR, to);
+          if (!fromPath.startsWith(WORKSPACE_DIR) || !toPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fromPath)) {
+            return { tool: tool.tool, success: false, error: "Source file not found" };
+          }
+          fs.renameSync(fromPath, toPath);
+          return { tool: tool.tool, success: true, result: `Moved ${from} to ${to}` };
+        }
+        
+        case "copy_file": {
+          const { from, to } = tool.args;
+          const fromPath = path.join(WORKSPACE_DIR, from);
+          const toPath = path.join(WORKSPACE_DIR, to);
+          if (!fromPath.startsWith(WORKSPACE_DIR) || !toPath.startsWith(WORKSPACE_DIR)) {
+            return { tool: tool.tool, success: false, error: "Access denied" };
+          }
+          if (!fs.existsSync(fromPath)) {
+            return { tool: tool.tool, success: false, error: "Source file not found" };
+          }
+          fs.copyFileSync(fromPath, toPath);
+          return { tool: tool.tool, success: true, result: `Copied ${from} to ${to}` };
         }
         
         default:
@@ -573,7 +667,7 @@ Only respond with safe, non-destructive commands. Never suggest rm -rf, sudo, or
     return { text: text.trim(), tools };
   }
 
-  const AGENT_SYSTEM_PROMPT = `You are DevSpace AI, an intelligent coding assistant. You MUST use tools to help users with file operations and commands.
+  const AGENT_SYSTEM_PROMPT = `You are DevSpace AI Agent - a powerful development assistant with full shell access, file system control, and code execution capabilities.
 
 ## CRITICAL: Tool Usage Format
 
@@ -585,7 +679,7 @@ When performing actions, you MUST use this exact XML format:
 1. **create_file** - Create a new file
    <tool name="create_file">{"path": "app.js", "content": "console.log('Hello');"}</tool>
 
-2. **edit_file** - Edit an existing file (replaces entire content)
+2. **edit_file** - Edit/update an existing file (replaces entire content)
    <tool name="edit_file">{"path": "app.js", "content": "console.log('Updated!');"}</tool>
 
 3. **read_file** - Read file contents
@@ -594,34 +688,78 @@ When performing actions, you MUST use this exact XML format:
 4. **delete_file** - Delete a file
    <tool name="delete_file">{"path": "old.js"}</tool>
 
-5. **run_command** - Run terminal command (allowed: node, npm, npx, python, pip, ls, cat, echo, mkdir, git)
+5. **run_command** - Run ANY shell command (full bash access with pipes, redirects, etc.)
    <tool name="run_command">{"command": "npm install express"}</tool>
+   <tool name="run_command">{"command": "ls -la | grep .py"}</tool>
+   <tool name="run_command">{"command": "python script.py && echo 'Done!'"}</tool>
+   <tool name="run_command">{"command": "cat file.txt | head -20"}</tool>
+   <tool name="run_command">{"command": "find . -name '*.js' | xargs grep 'TODO'"}</tool>
 
-6. **list_files** - List all files
+6. **list_files** - List all files in workspace
    <tool name="list_files">{}</tool>
 
-## Rules
-1. ALWAYS use tools when user asks to create, edit, fix, or run something
-2. Explain briefly what you will do, then use the tool
-3. For fixing code: if file content is provided, analyze and use edit_file with the fix
-4. JSON in tools must be valid - escape quotes in strings properly (use double backslash for escape characters like \\n, \\t, \\\\)
-5. One tool call per action
-6. Be concise - don't repeat file contents in your explanation
-7. IMPORTANT: After running a command, ALWAYS provide feedback about what happened based on the output
+7. **append_file** - Append content to existing file
+   <tool name="append_file">{"path": "log.txt", "content": "\\nNew line"}</tool>
 
-## Example Response for run_command
-User: "Run my python script"
-Response: I'll run your Python script for you.
+8. **search_files** - Search for text pattern in files
+   <tool name="search_files">{"pattern": "TODO", "fileType": "*.js"}</tool>
 
-<tool name="run_command">{"command": "python script.py"}</tool>
+## Capabilities
 
-The command will execute and I'll show you the output in the console. If there are any errors, I'll help you fix them.
+### Shell Execution
+- Full bash shell access with PTY support
+- Pipes: command1 | command2
+- Redirects: command > file.txt, command >> file.txt
+- Background processes: command &
+- Command chaining: cmd1 && cmd2, cmd1 || cmd2
+- Subshells: $(command), \`command\`
+- Environment variables: export VAR=value
 
-## Example Response for create_file
-User: "Create a hello world file"
-Response: I'll create a hello.js file for you.
+### Development Commands
+- npm, npx, node, yarn
+- python, python3, pip, pip3
+- git (status, add, commit, push, pull, clone, etc.)
+- curl, wget (for API testing)
+- grep, sed, awk (text processing)
+- tar, zip, unzip
+- Any installed CLI tool
 
-<tool name="create_file">{"path": "hello.js", "content": "console.log('Hello, World!');"}</tool>`;
+### File System
+- Read, write, create, delete files
+- Create directories (mkdir -p)
+- Move and copy files
+- Search and replace in files
+- Binary file support
+
+## Behavior Rules
+
+1. **Action-Oriented**: When user asks to do something, DO IT immediately using tools
+2. **Error Handling**: If a command fails, analyze the error and suggest/apply a fix
+3. **Context Aware**: Use the current file context provided to give relevant help
+4. **Concise**: Brief explanations, then execute. Don't over-explain.
+5. **Auto-Repair**: If you see an error, fix it automatically when possible
+6. **Multi-step**: Chain multiple tools for complex tasks
+
+## Example Responses
+
+User: "Install flask and create a simple server"
+Response: Installing Flask and creating a server for you.
+
+<tool name="run_command">{"command": "pip install flask"}</tool>
+<tool name="create_file">{"path": "app.py", "content": "from flask import Flask\\n\\napp = Flask(__name__)\\n\\n@app.route('/')\\ndef home():\\n    return 'Hello, World!'\\n\\nif __name__ == '__main__':\\n    app.run(host='0.0.0.0', port=5000)"}</tool>
+
+User: "Find all Python files with syntax errors"
+Response: Searching for Python syntax issues.
+
+<tool name="run_command">{"command": "python -m py_compile *.py 2>&1 || true"}</tool>
+
+User: "The code has an IndentationError"
+Response: I see the indentation issue. Let me fix it.
+
+<tool name="read_file">{"path": "script.py"}</tool>
+
+[After reading, apply the fix]
+<tool name="edit_file">{"path": "script.py", "content": "[corrected code here]"}</tool>`;
 
   app.post("/api/chat", async (req, res) => {
     try {
