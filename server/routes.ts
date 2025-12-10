@@ -17,12 +17,19 @@ if (!fs.existsSync(WORKSPACE_DIR)) {
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
-// Groq API configuration (OpenAI-compatible)
-const GROQ_API_KEY = process.env.GROQ_API_KEY || "";
-const ai = GROQ_API_KEY ? new OpenAI({
-  apiKey: GROQ_API_KEY,
-  baseURL: "https://api.groq.com/openai/v1",
-}) : null;
+// Groq API configuration (using environment variable from Replit Secrets)
+function getAIClient(): OpenAI | null {
+  const apiKey = process.env.GROQ_API_KEY || "";
+  if (!apiKey) return null;
+  return new OpenAI({
+    apiKey: apiKey,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
+}
+
+function isAIConfigured(): boolean {
+  return !!process.env.GROQ_API_KEY;
+}
 
 interface FileNode {
   id: string;
@@ -358,6 +365,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Query too long", command: null });
       }
 
+      const ai = getAIClient();
       if (!ai) {
         return res.status(200).json({ 
           error: "AI service not available",
@@ -758,10 +766,11 @@ Done. Run with: python app.py`;
         return res.status(400).json({ error: "Message is required" });
       }
 
+      const ai = getAIClient();
       if (!ai) {
         return res.status(500).json({ 
           error: "Groq API key not configured",
-          response: "I'm sorry, but the AI service is not configured yet. Please add your Groq API key to use the AI assistant."
+          response: "I'm sorry, but the AI service is not configured yet. Please add your Groq API key in the Secrets tab to use the AI assistant."
         });
       }
 
@@ -845,7 +854,7 @@ Done. Run with: python app.py`;
   // Check API status
   app.get("/api/status", (req, res) => {
     res.json({
-      aiConfigured: !!GROQ_API_KEY,
+      aiConfigured: isAIConfigured(),
       workspaceDir: WORKSPACE_DIR,
     });
   });
