@@ -1,9 +1,14 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2, FileCode, Terminal, FolderOpen, Pencil, Trash, CheckCircle, XCircle } from "lucide-react";
+import { 
+  Send, Bot, User, Loader2, Sparkles, Copy, Check, Trash2, FileCode, Terminal, 
+  FolderOpen, Pencil, Trash, CheckCircle, XCircle, Pin, PinOff, History, 
+  Download, RotateCcw, Settings2, ChevronDown, Zap
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,6 +17,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { sendChatMessage, getApiStatus, getFileTree, readFile, type ToolCall, type ToolResult, type FileNode } from "@/lib/api";
 import { agentConsole } from "@/lib/agentConsole";
 
@@ -22,6 +34,22 @@ interface Message {
   timestamp: Date;
   toolCalls?: ToolCall[];
   toolResults?: ToolResult[];
+  isPinned?: boolean;
+}
+
+interface ChatSession {
+  id: string;
+  name: string;
+  messages: Message[];
+  createdAt: Date;
+  model: string;
+}
+
+interface AgentSettings {
+  autoExecute: boolean;
+  autoTerminalSwitch: boolean;
+  showToolResults: boolean;
+  persistSession: boolean;
 }
 
 interface AIChatProps {
@@ -30,7 +58,12 @@ interface AIChatProps {
     content: string;
   };
   onFileChange?: () => void;
+  onSwitchToTerminal?: () => void;
 }
+
+const STORAGE_KEY = "devspace_chat_session";
+const HISTORY_KEY = "devspace_chat_history";
+const SETTINGS_KEY = "devspace_agent_settings";
 
 const TOOL_ICONS: Record<string, typeof FileCode> = {
   create_file: FileCode,
@@ -39,6 +72,11 @@ const TOOL_ICONS: Record<string, typeof FileCode> = {
   delete_file: Trash,
   run_command: Terminal,
   list_files: FolderOpen,
+  append_file: FileCode,
+  search_files: FolderOpen,
+  mkdir: FolderOpen,
+  move_file: FolderOpen,
+  copy_file: FolderOpen,
 };
 
 const TOOL_LABELS: Record<string, string> = {
@@ -48,32 +86,115 @@ const TOOL_LABELS: Record<string, string> = {
   delete_file: "Deleted file",
   run_command: "Ran command",
   list_files: "Listed files",
+  append_file: "Appended to file",
+  search_files: "Searched files",
+  mkdir: "Created directory",
+  move_file: "Moved file",
+  copy_file: "Copied file",
 };
 
-export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "welcome",
-      role: "assistant",
-      content: "Hello! I'm DevSpace AI, your intelligent coding assistant. I can help you:\n\n- Create and edit files\n- Fix code errors\n- Run terminal commands\n- Debug and explain code\n\nJust tell me what you need!",
-      timestamp: new Date(),
-    },
-  ]);
+const DEFAULT_SETTINGS: AgentSettings = {
+  autoExecute: true,
+  autoTerminalSwitch: true,
+  showToolResults: true,
+  persistSession: true,
+};
+
+const WELCOME_MESSAGE: Message = {
+  id: "welcome",
+  role: "assistant",
+  content: `**DevSpace AI Agent** - Level-S Autonomous Mode
+
+I'm your intelligent coding assistant with full capabilities:
+- Create, edit, delete files without confirmation
+- Run ANY shell command (pipes, redirects, chains)
+- Auto-fix errors and debug code
+- Full project understanding
+
+Just tell me what you need - I'll execute immediately.`,
+  timestamp: new Date(),
+};
+
+export default function AIChat({ currentFile, onFileChange, onSwitchToTerminal }: AIChatProps) {
+  // Load settings from localStorage
+  const loadSettings = (): AgentSettings => {
+    try {
+      const saved = localStorage.getItem(SETTINGS_KEY);
+      return saved ? { ...DEFAULT_SETTINGS, ...JSON.parse(saved) } : DEFAULT_SETTINGS;
+    } catch {
+      return DEFAULT_SETTINGS;
+    }
+  };
+
+  // Load session from localStorage
+  const loadSession = (): Message[] => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp),
+        }));
+      }
+    } catch {}
+    return [WELCOME_MESSAGE];
+  };
+
+  // Load chat history
+  const loadHistory = (): ChatSession[] => {
+    try {
+      const saved = localStorage.getItem(HISTORY_KEY);
+      if (saved) {
+        return JSON.parse(saved).map((s: any) => ({
+          ...s,
+          createdAt: new Date(s.createdAt),
+          messages: s.messages.map((m: any) => ({
+            ...m,
+            timestamp: new Date(m.timestamp),
+          })),
+        }));
+      }
+    } catch {}
+    return [];
+  };
+
+  const [messages, setMessages] = useState<Message[]>(loadSession);
+  const [settings, setSettings] = useState<AgentSettings>(loadSettings);
+  const [chatHistory, setChatHistory] = useState<ChatSession[]>(loadHistory);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState("meta-llama/llama-3.2-3b-instruct:free");
+  const [selectedModel, setSelectedModel] = useState("groq-llama3.3-70b");
   const [apiConnected, setApiConnected] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const models = [
-    { id: "meta-llama/llama-3.2-3b-instruct:free", name: "Llama 3.2 3B (Free)", provider: "Meta" },
-    { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B (Free)", provider: "Meta" },
-    { id: "google/gemma-2-9b-it:free", name: "Gemma 2 9B (Free)", provider: "Google" },
-    { id: "anthropic/claude-3.5-sonnet", name: "Claude 3.5 Sonnet", provider: "Anthropic" },
-    { id: "openai/gpt-4-turbo", name: "GPT-4 Turbo", provider: "OpenAI" },
+    { id: "groq-llama3.3-70b", name: "Llama 3.3 70B", provider: "Groq", description: "Fast & powerful" },
+    { id: "meta-llama/llama-3.2-3b-instruct:free", name: "Llama 3.2 3B", provider: "OpenRouter", description: "Free tier" },
+    { id: "meta-llama/llama-3.1-8b-instruct:free", name: "Llama 3.1 8B", provider: "OpenRouter", description: "Free tier" },
+    { id: "google/gemma-2-9b-it:free", name: "Gemma 2 9B", provider: "OpenRouter", description: "Free tier" },
   ];
+
+  // Persist messages to localStorage
+  useEffect(() => {
+    if (settings.persistSession) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    }
+  }, [messages, settings.persistSession]);
+
+  // Persist settings
+  useEffect(() => {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  }, [settings]);
+
+  // Persist history
+  useEffect(() => {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory));
+  }, [chatHistory]);
 
   useEffect(() => {
     getApiStatus().then((status) => {
@@ -104,6 +225,79 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
     return result;
   };
 
+  const updateSettings = (key: keyof AgentSettings, value: boolean) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const togglePinMessage = (messageId: string) => {
+    setMessages(prev => 
+      prev.map(m => 
+        m.id === messageId ? { ...m, isPinned: !m.isPinned } : m
+      )
+    );
+  };
+
+  const saveToHistory = () => {
+    const session: ChatSession = {
+      id: `session-${Date.now()}`,
+      name: `Chat ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`,
+      messages: messages.filter(m => m.id !== "welcome"),
+      createdAt: new Date(),
+      model: selectedModel,
+    };
+    if (session.messages.length > 0) {
+      setChatHistory(prev => [session, ...prev.slice(0, 49)]); // Keep last 50 sessions
+    }
+  };
+
+  const loadFromHistory = (session: ChatSession) => {
+    setMessages([WELCOME_MESSAGE, ...session.messages]);
+    setSelectedModel(session.model);
+    setShowHistory(false);
+  };
+
+  const deleteFromHistory = (sessionId: string) => {
+    setChatHistory(prev => prev.filter(s => s.id !== sessionId));
+  };
+
+  const clearChat = () => {
+    // Save current chat to history first
+    saveToHistory();
+    
+    // Keep pinned messages
+    const pinnedMessages = messages.filter(m => m.isPinned);
+    setMessages([
+      {
+        id: "welcome-new",
+        role: "assistant",
+        content: "Chat cleared. Pinned messages preserved. How can I help you?",
+        timestamp: new Date(),
+      },
+      ...pinnedMessages,
+    ]);
+  };
+
+  const exportChat = () => {
+    const exportData = {
+      exportedAt: new Date().toISOString(),
+      model: selectedModel,
+      messages: messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        toolResults: m.toolResults,
+      })),
+    };
+    
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `devspace-chat-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleSend = async () => {
     const trimmedInput = input.trim();
     if (!trimmedInput || isLoading) return;
@@ -126,6 +320,10 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
       const context = {
         currentFile: currentFile,
         fileList: fileList,
+        settings: {
+          autoExecute: settings.autoExecute,
+          noConfirmation: true, // Always no confirmation in Level-S mode
+        },
       };
 
       const response = await sendChatMessage(trimmedInput, selectedModel, context);
@@ -141,9 +339,13 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
 
       setMessages((prev) => [...prev, assistantMessage]);
 
+      // Process tool results
       if (response.toolResults && response.toolResults.length > 0) {
+        let hasRunCommand = false;
+        
         response.toolResults.forEach((result) => {
           if (result.tool === "run_command") {
+            hasRunCommand = true;
             const args = response.toolCalls?.find(t => t.tool === "run_command")?.args;
             agentConsole.emit("command", `$ ${args?.command || "unknown command"}`);
             
@@ -165,8 +367,13 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
           }
         });
 
+        // Auto switch to terminal if command was run
+        if (hasRunCommand && settings.autoTerminalSwitch && onSwitchToTerminal) {
+          onSwitchToTerminal();
+        }
+
         const hasFileChanges = response.toolResults.some(
-          (r) => r.success && ["create_file", "edit_file", "delete_file"].includes(r.tool)
+          (r) => r.success && ["create_file", "edit_file", "delete_file", "append_file", "move_file", "copy_file"].includes(r.tool)
         );
         if (hasFileChanges && onFileChange) {
           onFileChange();
@@ -176,7 +383,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "assistant",
-        content: `Sorry, I encountered an error: ${error.message}. Please try again.`,
+        content: `Error: ${error.message}. Retrying or adjusting approach...`,
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, errorMessage]);
@@ -198,18 +405,9 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const clearChat = () => {
-    setMessages([
-      {
-        id: "welcome-new",
-        role: "assistant",
-        content: "Chat cleared. How can I help you?",
-        timestamp: new Date(),
-      },
-    ]);
-  };
-
   const renderToolResults = (toolResults: ToolResult[]) => {
+    if (!settings.showToolResults) return null;
+    
     return (
       <div className="mt-2 space-y-2">
         {toolResults.map((result, index) => {
@@ -217,7 +415,6 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
           const label = TOOL_LABELS[result.tool] || result.tool;
           const isCommand = result.tool === "run_command";
           
-          // Extract stdout/stderr for command results
           const stdout = result.result?.stdout || "";
           const stderr = result.result?.stderr || result.error || "";
           const hasOutput = isCommand && (stdout || stderr);
@@ -317,9 +514,18 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
               </div>
             );
           }
+          
+          // Parse bold text
+          const boldParsed = part.split(/\*\*(.*?)\*\*/g).map((segment, i) => {
+            if (i % 2 === 1) {
+              return <strong key={i}>{segment}</strong>;
+            }
+            return segment;
+          });
+          
           return (
             <span key={index} className="whitespace-pre-wrap">
-              {part}
+              {boldParsed}
             </span>
           );
         })}
@@ -330,20 +536,23 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
 
   return (
     <div className="flex flex-col h-full bg-card">
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border">
         <div className="flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-primary" />
+          <Zap className="w-4 h-4 text-yellow-500" />
           <span className="text-sm font-medium">AI Agent</span>
           <Badge variant={apiConnected ? "default" : "destructive"} className="text-xs">
-            {apiConnected ? "Connected" : "Not Configured"}
+            {apiConnected ? "Level-S" : "Offline"}
           </Badge>
         </div>
         <div className="flex items-center gap-1">
+          {/* Model Selector */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm" variant="ghost" className="h-7 text-xs" data-testid="button-select-model">
                 <Bot className="w-3 h-3 mr-1" />
                 {models.find(m => m.id === selectedModel)?.name || "Select Model"}
+                <ChevronDown className="w-3 h-3 ml-1" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
@@ -357,12 +566,136 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
                 >
                   <div className="flex flex-col">
                     <span>{model.name}</span>
-                    <span className="text-xs text-muted-foreground">{model.provider}</span>
+                    <span className="text-xs text-muted-foreground">{model.provider} - {model.description}</span>
                   </div>
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* History Button */}
+          <Dialog open={showHistory} onOpenChange={setShowHistory}>
+            <DialogTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="button-history">
+                <History className="w-3.5 h-3.5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md max-h-[70vh]">
+              <DialogHeader>
+                <DialogTitle>Chat History</DialogTitle>
+              </DialogHeader>
+              <ScrollArea className="h-[50vh]">
+                {chatHistory.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    No chat history yet
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {chatHistory.map((session) => (
+                      <div
+                        key={session.id}
+                        className="flex items-center justify-between p-2 rounded-md border border-border hover-elevate cursor-pointer"
+                        onClick={() => loadFromHistory(session)}
+                        data-testid={`history-${session.id}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="text-sm font-medium truncate">{session.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {session.messages.length} messages
+                          </div>
+                        </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 flex-shrink-0"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteFromHistory(session.id);
+                          }}
+                          data-testid={`delete-history-${session.id}`}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </DialogContent>
+          </Dialog>
+
+          {/* Settings Button */}
+          <Dialog open={showSettings} onOpenChange={setShowSettings}>
+            <DialogTrigger asChild>
+              <Button size="icon" variant="ghost" className="h-7 w-7" data-testid="button-settings">
+                <Settings2 className="w-3.5 h-3.5" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Agent Settings</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Auto Execute</div>
+                    <div className="text-xs text-muted-foreground">Execute tools without confirmation</div>
+                  </div>
+                  <Switch
+                    checked={settings.autoExecute}
+                    onCheckedChange={(v) => updateSettings("autoExecute", v)}
+                    data-testid="switch-auto-execute"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Auto Terminal Switch</div>
+                    <div className="text-xs text-muted-foreground">Switch to terminal on command run</div>
+                  </div>
+                  <Switch
+                    checked={settings.autoTerminalSwitch}
+                    onCheckedChange={(v) => updateSettings("autoTerminalSwitch", v)}
+                    data-testid="switch-auto-terminal"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Show Tool Results</div>
+                    <div className="text-xs text-muted-foreground">Display tool execution results</div>
+                  </div>
+                  <Switch
+                    checked={settings.showToolResults}
+                    onCheckedChange={(v) => updateSettings("showToolResults", v)}
+                    data-testid="switch-show-results"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-medium">Persist Session</div>
+                    <div className="text-xs text-muted-foreground">Keep chat on page refresh</div>
+                  </div>
+                  <Switch
+                    checked={settings.persistSession}
+                    onCheckedChange={(v) => updateSettings("persistSession", v)}
+                    data-testid="switch-persist-session"
+                  />
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+
+          {/* Export Button */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            onClick={exportChat}
+            data-testid="button-export-chat"
+          >
+            <Download className="w-3.5 h-3.5" />
+          </Button>
+
+          {/* Clear Button */}
           <Button
             size="icon"
             variant="ghost"
@@ -375,6 +708,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
         </div>
       </div>
 
+      {/* Messages */}
       <ScrollArea className="flex-1" ref={scrollRef}>
         <div className="p-3 space-y-4">
           {messages.map((message) => (
@@ -382,7 +716,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
               key={message.id}
               className={`flex gap-3 ${
                 message.role === "user" ? "justify-end" : "justify-start"
-              }`}
+              } ${message.isPinned ? "bg-yellow-500/5 -mx-3 px-3 py-2 rounded-md" : ""}`}
               data-testid={`message-${message.id}`}
             >
               {message.role === "assistant" && (
@@ -391,18 +725,34 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
                 </div>
               )}
               <div
-                className={`max-w-[85%] rounded-lg px-3 py-2 ${
+                className={`max-w-[85%] rounded-lg px-3 py-2 relative group ${
                   message.role === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
                 }`}
               >
+                {/* Pin Button */}
+                <button
+                  onClick={() => togglePinMessage(message.id)}
+                  className="absolute -top-2 -right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-background border border-border rounded-full p-1"
+                  data-testid={`pin-message-${message.id}`}
+                >
+                  {message.isPinned ? (
+                    <PinOff className="w-3 h-3 text-yellow-500" />
+                  ) : (
+                    <Pin className="w-3 h-3 text-muted-foreground" />
+                  )}
+                </button>
+                
                 <div className="text-sm">{renderContent(message)}</div>
-                <div className="text-xs opacity-60 mt-1">
-                  {message.timestamp.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
+                <div className="flex items-center gap-2 text-xs opacity-60 mt-1">
+                  {message.isPinned && <Pin className="w-3 h-3 text-yellow-500" />}
+                  <span>
+                    {message.timestamp.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
                 </div>
               </div>
               {message.role === "user" && (
@@ -420,7 +770,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
               <div className="bg-muted rounded-lg px-3 py-2">
                 <div className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span className="text-sm text-muted-foreground">Thinking...</span>
+                  <span className="text-sm text-muted-foreground">Executing...</span>
                 </div>
               </div>
             </div>
@@ -428,6 +778,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
         </div>
       </ScrollArea>
 
+      {/* Input */}
       <div className="p-3 border-t border-border">
         {currentFile && (
           <div className="flex items-center gap-2 mb-2 px-2 py-1 bg-muted/50 rounded-md text-xs text-muted-foreground">
@@ -441,7 +792,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask me to create, edit, or fix files..."
+            placeholder="Tell me what to do..."
             className="min-h-[40px] max-h-32 resize-none"
             rows={1}
             data-testid="chat-input"
@@ -459,7 +810,7 @@ export default function AIChat({ currentFile, onFileChange }: AIChatProps) {
           </Button>
         </div>
         <div className="text-xs text-muted-foreground mt-2 text-center">
-          Press Enter to send, Shift+Enter for new line
+          Level-S Mode: No confirmation needed
         </div>
       </div>
     </div>

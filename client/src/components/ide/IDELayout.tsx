@@ -328,6 +328,7 @@ export default function IDELayout() {
           <AIChat 
             currentFile={activeFileId ? openFiles.find(f => f.id === activeFileId) : undefined}
             onFileChange={handleAIFileChange}
+            onSwitchToTerminal={() => setActiveTab("terminal")}
           />
         );
       case "packages":
